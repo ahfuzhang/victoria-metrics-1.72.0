@@ -1,4 +1,4 @@
-package mergeset
+﻿package mergeset
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ type partSearch struct {
 	Item []byte
 
 	// p is a part to search.
-	p *part
+	p *part  // 每个part search指向对应的 part
 
 	// The remaining metaindex rows to scan, obtained from p.mrs.
 	mrs []metaindexRow
@@ -26,7 +26,7 @@ type partSearch struct {
 	bhs []blockHeader
 
 	idxbCache *indexBlockCache
-	ibCache   *inmemoryBlockCache
+	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找
 
 	// err contains the last error.
 	err error
@@ -77,7 +77,7 @@ func (ps *partSearch) Seek(k []byte) {
 	}
 	ps.err = nil
 
-	if string(k) > string(ps.p.ph.lastItem) {
+	if string(k) > string(ps.p.ph.lastItem) {  // part 与 part 之间是排序的吗？
 		// Not matching items in the part.
 		ps.err = io.EOF
 		return
@@ -94,12 +94,12 @@ func (ps *partSearch) Seek(k []byte) {
 	ps.indexBuf = ps.indexBuf[:0]
 	ps.compressedIndexBuf = ps.compressedIndexBuf[:0]
 
-	ps.sb.Reset()
+	ps.sb.Reset()  // sb storageBlock，一个空的容器，用来存放什么东西的
 
 	ps.ib = nil
 	ps.ibItemIdx = 0
 
-	if string(k) <= string(ps.p.ph.firstItem) {
+	if string(k) <= string(ps.p.ph.firstItem) {  // 如果比第一个time sereis还要小
 		// The first item in the first block matches.
 		ps.err = ps.nextBlock()
 		return
@@ -168,14 +168,14 @@ func (ps *partSearch) Seek(k []byte) {
 }
 
 func (ps *partSearch) tryFastSeek(k []byte) bool {
-	if ps.ib == nil {
+	if ps.ib == nil {  //  inmemoryBlock
 		return false
 	}
 	data := ps.ib.data
 	items := ps.ib.items
 	idx := ps.ibItemIdx
 	if idx >= len(items) {
-		// The ib is exhausted.
+		// The ib is exhausted.  耗尽了
 		return false
 	}
 	if string(k) > items[len(items)-1].String(data) {
@@ -323,7 +323,7 @@ func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error)
 
 	return ib, nil
 }
-
+//  data 把所有time sereis的数据，排序后顺序放一起。 items记录了每个ts的起始位置
 func binarySearchKey(data []byte, items []Item, key []byte) int {
 	if len(items) == 0 {
 		return 0

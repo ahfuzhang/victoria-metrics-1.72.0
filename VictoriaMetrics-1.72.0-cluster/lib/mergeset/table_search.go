@@ -19,9 +19,9 @@ type TableSearch struct {
 
 	tb *Table
 
-	pws []*partWrapper  // part 包装的数组
+	pws []*partWrapper  // index下面的多个 part
 
-	psPool []partSearch
+	psPool []partSearch  // 可能是每个part, 对应着一个part search对象
 	psHeap partSearchHeap
 
 	err error

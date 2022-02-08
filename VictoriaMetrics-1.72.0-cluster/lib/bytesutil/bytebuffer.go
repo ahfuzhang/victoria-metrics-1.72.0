@@ -1,4 +1,4 @@
-package bytesutil
+﻿package bytesutil
 
 import (
 	"io"
@@ -9,7 +9,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 )
 
-var (
+var (  //为什么要这么写呢？看不明白
 	// Verify ByteBuffer implements the given interfaces.
 	_ io.Writer           = &ByteBuffer{}
 	_ fs.MustReadAtCloser = &ByteBuffer{}

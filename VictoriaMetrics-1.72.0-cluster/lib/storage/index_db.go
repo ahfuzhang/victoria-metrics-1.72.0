@@ -54,7 +54,7 @@ type indexDB struct {
 	// Atomic counters must go at the top of the structure in order to properly align by 8 bytes on 32-bit archs.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212 .
 
-	refCount uint64  // 用于引用计数
+	refCount uint64  // 以引用计数的方式来管理这个对象
 
 	// The counter for newly created time series. It can be used for determining time series churn rate.
 	newTimeseriesCreated uint64
@@ -77,12 +77,12 @@ type indexDB struct {
 	// The db must be automatically recovered after that.
 	missingMetricNamesForMetricID uint64
 
-	mustDrop uint64
+	mustDrop uint64  // 当切换indexdb的时候，prev的数据库会被打上这个标记
 
 	name string
 	tb   *mergeset.Table  // table 对象
 
-	extDB     *indexDB  // 指向前一个时间片的 indexDB
+	extDB     *indexDB   // 存储前一个4小时的节点
 	extDBLock sync.Mutex
 
 	// Cache for fast TagFilters -> TSIDs lookup.
@@ -434,7 +434,7 @@ func (db *indexDB) getTSIDByNameNoCreate(dst *TSID, metricName []byte) error {
 }
 
 type indexSearch struct {
-	db *indexDB
+	db *indexDB  // 父对象
 	ts mergeset.TableSearch  // index search 对象中包含table search对象
 	kb bytesutil.ByteBuffer
 	mp tagToMetricIDsRowParser
@@ -1722,7 +1722,7 @@ var tagFiltersKeyBufPool bytesutil.ByteBufferPool
 func (is *indexSearch) getTSIDByMetricName(dst *TSID, metricName []byte) error { // 根据time series的原始数据，查询tsid
 	dmis := is.db.s.getDeletedMetricIDs()
 	ts := &is.ts  // table search 对象
-	kb := &is.kb
+	kb := &is.kb  // bytes buffer 对象
 	kb.B = append(kb.B[:0], nsPrefixMetricNameToTSID)
 	kb.B = append(kb.B, metricName...)
 	kb.B = append(kb.B, kvSeparatorChar)  // 拼接成内存中的原始数据的格式

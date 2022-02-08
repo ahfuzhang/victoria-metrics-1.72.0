@@ -1,4 +1,4 @@
-package mergeset
+﻿package mergeset
 
 import (
 	"encoding/hex"
@@ -20,10 +20,10 @@ type partHeader struct {
 	blocksCount uint64
 
 	// The first item in the part.
-	firstItem []byte
+	firstItem []byte  // part头中的第一个 time sereis
 
 	// The last item in the part.
-	lastItem []byte
+	lastItem []byte  // time series的原始数据，记录最后一个
 }
 
 type partHeaderJSON struct {

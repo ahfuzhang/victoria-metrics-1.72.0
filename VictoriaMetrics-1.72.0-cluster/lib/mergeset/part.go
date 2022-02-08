@@ -46,14 +46,14 @@ var (
 	maxCachedInmemoryBlocksPerPartOnce sync.Once
 )
 
-type part struct {
-	ph partHeader
+type part struct {  // 所有的time series应该是排序后存储的，每个part对象管理一部分time sereis
+	ph partHeader  // 头部信息
 
 	path string
 
 	size uint64
 
-	mrs []metaindexRow
+	mrs []metaindexRow  //这个是个啥, index block
 
 	indexFile fs.MustReadAtCloser
 	itemsFile fs.MustReadAtCloser
@@ -66,7 +66,7 @@ type part struct {
 func openFilePart(path string) (*part, error) {  // 打开具体的一个part
 	path = filepath.Clean(path)
 
-	var ph partHeader
+	var ph partHeader  //包含文件夹名称中的 items count, blocks count等信息
 	if err := ph.ParseFromPath(path); err != nil {
 		return nil, fmt.Errorf("cannot parse path to part: %w", err)
 	}

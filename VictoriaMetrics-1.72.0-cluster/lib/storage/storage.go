@@ -276,7 +276,7 @@ func OpenStorage(path string, retentionMsecs int64, maxHourlySeries, maxDailySer
 
 	s.startCurrHourMetricIDsUpdater()  // 每 10 秒，把这一小时的 time series 持久化存储
 	s.startNextDayMetricIDsUpdater()  // 每 11 秒，把这一天的 time sereies 持久化存储
-	s.startRetentionWatcher()  // 数据库默认支持的时间范围为30天，把超过30天的数据淘汰，每4小时检查一次
+	s.startRetentionWatcher()  // 数据库默认支持的时间范围为30天，把超过30天的数据淘汰，每4小时检查一次   每4小时切换一个indexdb
 	s.startFreeDiskSpaceWatcher()  // 每30秒，检查剩余磁盘空间
 
 	return s, nil
@@ -1636,7 +1636,7 @@ func (s *Storage) ForceMergePartitions(partitionNamePrefix string) error {
 
 var rowsAddedTotal uint64
 
-// AddRows adds the given mrs to s.
+// AddRows adds the given mrs to s.  // 插入数据的入口
 func (s *Storage) AddRows(mrs []MetricRow, precisionBits uint8) error {  // 每次请求的批量插入过程
 	if len(mrs) == 0 {
 		return nil
@@ -1671,7 +1671,7 @@ func (s *Storage) AddRows(mrs []MetricRow, precisionBits uint8) error {  // 每�
 
 	// Add rows to the storage in blocks with limited size in order to reduce memory usage.
 	var firstErr error
-	ic := getMetricRowsInsertCtx()
+	ic := getMetricRowsInsertCtx()  // 从内存池获取对象
 	maxBlockLen := len(ic.rrs)
 	for len(mrs) > 0 {
 		mrsBlock := mrs
@@ -1681,7 +1681,7 @@ func (s *Storage) AddRows(mrs []MetricRow, precisionBits uint8) error {  // 每�
 		} else {
 			mrs = nil
 		}
-		if err := s.add(ic.rrs, ic.tmpMrs, mrsBlock, precisionBits); err != nil {  // 执行插入
+		if err := s.add(ic.rrs, ic.tmpMrs, mrsBlock, precisionBits); err != nil {  // 每个批次N条，直到全部插入成功
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1689,7 +1689,7 @@ func (s *Storage) AddRows(mrs []MetricRow, precisionBits uint8) error {  // 每�
 		}
 		atomic.AddUint64(&rowsAddedTotal, uint64(len(mrsBlock)))
 	}
-	putMetricRowsInsertCtx(ic)
+	putMetricRowsInsertCtx(ic)  // 放回内存池
 
 	<-addRowsConcurrencyCh
 
@@ -1797,7 +1797,7 @@ func (s *Storage) RegisterMetricNames(mrs []MetricRow) error {
 }
 
 func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, precisionBits uint8) error {  // 插入多行的逻辑
-	idb := s.idb()  // index db 对象
+	idb := s.idb()  // 获取 indexdb 对象
 	j := 0
 	var (
 		// These vars are used for speeding up bulk imports of multiple adjacent rows for the same metricName.
@@ -1843,7 +1843,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		j++
 		r.Timestamp = mr.Timestamp
 		r.Value = mr.Value
-		r.PrecisionBits = precisionBits
+		r.PrecisionBits = precisionBits  // 默认 64 位精度
 		if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {
 			// Fast path - the current mr contains the same metric name as the previous mr, so it contains the same TSID.
 			// This path should trigger on bulk imports when many rows contain the same MetricNameRaw.
@@ -1867,9 +1867,9 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 
 		// Slow path - the TSID is missing in the cache.
 		// Postpone its search in the loop below.
-		j--
-		if pmrs == nil {
-			pmrs = getPendingMetricRows()
+		j--  // 新增 metric id 的逻辑
+		if pmrs == nil {  //把要插入的数据放在这个结构里
+			pmrs = getPendingMetricRows()  //从内存池获取
 		}
 		if err := pmrs.addRow(mr); err != nil {  // 如果是新的tsid
 			// Do not stop adding rows on error - just skip invalid row.
@@ -1880,7 +1880,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 			}
 			continue
 		}
-	}
+	}  //对所有要插入的行，遍历完成
 	if pmrs != nil {
 		// Sort pendingMetricRows by canonical metric name in order to speed up search via `is` in the loop below.
 		pendingMetricRows := pmrs.pmrs  // 这个批次里面的新的TSID
@@ -1890,7 +1890,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		is := idb.getIndexSearch(0, 0, noDeadline)  // 使用 index search对象来搜索，有个对象池
 		prevMetricNameRaw = nil
 		var slowInsertsCount uint64
-		for i := range pendingMetricRows {
+		for i := range pendingMetricRows {  //所有的新行
 			pmr := &pendingMetricRows[i]
 			mr := pmr.mr
 			dstMrs[j] = mr
@@ -1988,13 +1988,13 @@ type pendingMetricRow struct {
 	mr         *MetricRow  // 但是这个才是原始数据
 }
 
-type pendingMetricRows struct {
+type pendingMetricRows struct {  // 这个结构保存新增的 metric 数据
 	pmrs           []pendingMetricRow
 	metricNamesBuf []byte
 
 	lastMetricNameRaw []byte
 	lastMetricName    []byte
-	mn                MetricName
+	mn                MetricName  //最后一个time series解析后的数据
 }
 
 func (pmrs *pendingMetricRows) reset() {
@@ -2009,14 +2009,14 @@ func (pmrs *pendingMetricRows) reset() {
 	pmrs.mn.Reset()
 }
 
-func (pmrs *pendingMetricRows) addRow(mr *MetricRow) error {
+func (pmrs *pendingMetricRows) addRow(mr *MetricRow) error {  // 插入一行的逻辑
 	// Do not spend CPU time on re-calculating canonical metricName during bulk import
 	// of many rows for the same metric.
 	if string(mr.MetricNameRaw) != string(pmrs.lastMetricNameRaw) {
 		if err := pmrs.mn.UnmarshalRaw(mr.MetricNameRaw); err != nil {
 			return fmt.Errorf("cannot unmarshal MetricNameRaw %q: %w", mr.MetricNameRaw, err)
 		}
-		pmrs.mn.sortTags()
+		pmrs.mn.sortTags()  // 对tag排序
 		metricNamesBufLen := len(pmrs.metricNamesBuf)
 		pmrs.metricNamesBuf = pmrs.mn.Marshal(pmrs.metricNamesBuf)
 		pmrs.lastMetricName = pmrs.metricNamesBuf[metricNamesBufLen:]
@@ -2025,7 +2025,7 @@ func (pmrs *pendingMetricRows) addRow(mr *MetricRow) error {
 	pmrs.pmrs = append(pmrs.pmrs, pendingMetricRow{
 		MetricName: pmrs.lastMetricName,
 		mr:         mr,
-	})
+	})  //新增的监控项，加到数组里
 	return nil
 }
 
