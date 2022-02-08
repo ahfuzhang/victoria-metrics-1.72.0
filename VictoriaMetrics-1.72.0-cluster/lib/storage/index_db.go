@@ -523,7 +523,7 @@ func (db *indexDB) createTSIDByName(dst *TSID, metricName []byte) error {  // �
 	if err := db.generateTSID(dst, metricName, mn); err != nil {
 		return fmt.Errorf("cannot generate TSID: %w", err)
 	}
-	if err := db.createIndexes(dst, mn); err != nil {
+	if err := db.createIndexes(dst, mn); err != nil {  // 为新的监控项创建索引
 		return fmt.Errorf("cannot create indexes: %w", err)
 	}
 
@@ -549,16 +549,16 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 	// Search the TSID in the external storage.  // metricName 是未decode之前的完整数据, mn是decode后的数据
 	// This is usually the db from the previous period.  // dst 是 out 参数
 	var err error
-	if db.doExtDB(func(extDB *indexDB) {  // 这里为什么要选择4小时以前的 indexdb 呢？
+	if db.doExtDB(func(extDB *indexDB) {  // 这里为什么要选择4小时以前的 indexdb 呢？ 是不是搜索索引的时间最少4小时，最多8小时？
 		err = extDB.getTSIDByNameNoCreate(dst, metricName)
-	}) {
+	}) {  // 如果存在 prev db
 		if err == nil {
 			// The TSID has been found in the external storage.
 			return nil
 		}
 		if err != io.EOF {
 			return fmt.Errorf("external search failed: %w", err)
-		}
+		} //  err==io.EOF， 说明在 prev db没有搜索到相同的 time series
 	}
 
 	// The TSID wasn't found in the external storage.
@@ -572,22 +572,22 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 	if len(mn.Tags) > 1 {
 		dst.InstanceID = uint32(xxhash.Sum64(mn.Tags[1].Value))
 	}
-	dst.MetricID = generateUniqueMetricID()
+	dst.MetricID = generateUniqueMetricID()  // 通过原子加来产生唯一的 metricID
 	return nil
 }
 
-func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {
+func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算得到新的TSID后，创建索引
 	// The order of index items is important.
 	// It guarantees index consistency.
 
-	ii := getIndexItems()
+	ii := getIndexItems()  // 从内存池获取 indexItems 对象
 	defer putIndexItems(ii)
 
 	// Create MetricName -> TSID index.
 	ii.B = append(ii.B, nsPrefixMetricNameToTSID)
 	ii.B = mn.Marshal(ii.B)
 	ii.B = append(ii.B, kvSeparatorChar)
-	ii.B = tsid.Marshal(ii.B)
+	ii.B = tsid.Marshal(ii.B)  // 上面把数据序列化为存储要求的格式
 	ii.Next()
 
 	// Create MetricID -> MetricName index.
@@ -600,7 +600,7 @@ func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {
 	ii.B = marshalCommonPrefix(ii.B, nsPrefixMetricIDToTSID, mn.AccountID, mn.ProjectID)
 	ii.B = encoding.MarshalUint64(ii.B, tsid.MetricID)
 	ii.B = tsid.Marshal(ii.B)
-	ii.Next()
+	ii.Next()  // 为什么把几种不同格式的数据，放在同一个buffer呢？
 
 	prefix := kbPool.Get()
 	prefix.B = marshalCommonPrefix(prefix.B[:0], nsPrefixTagToMetricIDs, mn.AccountID, mn.ProjectID)
@@ -611,10 +611,10 @@ func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {
 }
 
 type indexItems struct {
-	B     []byte
-	Items [][]byte
+	B     []byte  //这是一个大数组，用于顺序的存放多个 time series的数据
+	Items [][]byte  // 这个结构引用上面的数据
 
-	start int
+	start int  // 记录在 B 中插入的位置
 }
 
 func (ii *indexItems) reset() {

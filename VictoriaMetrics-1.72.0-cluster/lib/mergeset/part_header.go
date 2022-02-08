@@ -12,7 +12,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fs"
 )
 
-type partHeader struct {
+type partHeader struct {  // meta.json对应的结构
 	// The number of items the part contains.
 	itemsCount uint64
 

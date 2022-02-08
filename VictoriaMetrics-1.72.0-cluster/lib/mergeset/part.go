@@ -59,7 +59,7 @@ type part struct {  // 所有的time series应该是排序后存储的，每个p
 	itemsFile fs.MustReadAtCloser  //  items.bin
 	lensFile  fs.MustReadAtCloser  // lens.bin
 
-	idxbCache *indexBlockCache
+	idxbCache *indexBlockCache  // 从 index.bin中加载的数据，放在cache里面
 	ibCache   *inmemoryBlockCache
 }
 

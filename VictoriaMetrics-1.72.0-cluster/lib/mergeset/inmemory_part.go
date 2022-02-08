@@ -8,7 +8,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 )
 
-type inmemoryPart struct {
+type inmemoryPart struct {  //数据会先写入 inmemoryPart
 	ph partHeader
 	sb storageBlock
 	bh blockHeader
