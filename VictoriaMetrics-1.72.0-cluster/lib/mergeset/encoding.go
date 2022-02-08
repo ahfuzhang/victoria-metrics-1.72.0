@@ -47,7 +47,7 @@ func (it Item) String(data []byte) string {
 
 func (ib *inmemoryBlock) Len() int { return len(ib.items) }
 
-func (ib *inmemoryBlock) Less(i, j int) bool {
+func (ib *inmemoryBlock) Less(i, j int) bool {  // 内部数组的排序
 	data := ib.data
 	items := ib.items
 	return string(items[i].Bytes(data)) < string(items[j].Bytes(data))
@@ -112,7 +112,7 @@ func commonPrefixLen(a, b []byte) int {
 // Add adds x to the end of ib.
 //
 // false is returned if x isn't added to ib due to block size contraints.
-func (ib *inmemoryBlock) Add(x []byte) bool {
+func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据
 	data := ib.data
 	if len(x)+len(data) > maxInmemoryBlockSize {
 		return false
