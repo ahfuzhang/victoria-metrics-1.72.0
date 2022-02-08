@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/encoding"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fasttime"
@@ -21,7 +23,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/netutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/protoparser/clusternative"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -260,7 +261,7 @@ func (s *Server) isStopping() bool {
 func (s *Server) processVMInsertConn(bc *handshake.BufferedConn) error {
 	return clusternative.ParseStream(bc, func(rows []storage.MetricRow) error {
 		vminsertMetricsRead.Add(len(rows))
-		return s.storage.AddRows(rows, uint8(*precisionBits))
+		return s.storage.AddRows(rows, uint8(*precisionBits))  // 批量插入数据
 	}, s.storage.IsReadOnly)  // 并发数为 CPU 核数
 }
 

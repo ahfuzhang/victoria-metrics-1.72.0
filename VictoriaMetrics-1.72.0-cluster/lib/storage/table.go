@@ -15,16 +15,16 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/uint64set"
 )
 
-// table represents a single table with time series data.
+// table represents a single table with time series data.  // 数据表对象, 存储time series的data部分
 type table struct {
-	path                string
-	smallPartitionsPath string
+	path                string  // 存储路径
+	smallPartitionsPath string  // 分为大小分区
 	bigPartitionsPath   string
 
 	getDeletedMetricIDs func() *uint64set.Set
-	retentionMsecs      int64
+	retentionMsecs      int64  //默认31天
 
-	ptws     []*partitionWrapper
+	ptws     []*partitionWrapper  // table下面包含多个 partition
 	ptwsLock sync.Mutex
 
 	flockF *os.File
@@ -40,7 +40,7 @@ type partitionWrapper struct {
 	// Atomic counters must be at the top of struct for proper 8-byte alignment on 32-bit archs.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
 
-	refCount uint64
+	refCount uint64  // 通过引用计数，解决并发问题
 
 	// The partition must be dropped if mustDrop > 0
 	mustDrop uint64
@@ -60,7 +60,7 @@ func (ptw *partitionWrapper) decRef() {
 	if n > 0 {
 		return
 	}
-
+	// 引用计数为0后，丢弃这个partition
 	// refCount is zero. Close the partition.
 	ptw.pt.MustClose()
 
@@ -70,7 +70,7 @@ func (ptw *partitionWrapper) decRef() {
 	}
 
 	// ptw.mustDrop > 0. Drop the partition.
-	ptw.pt.Drop()
+	ptw.pt.Drop()  // 删除目录下的所有文件
 	ptw.pt = nil
 }
 
@@ -97,7 +97,7 @@ func openTable(path string, getDeletedMetricIDs func() *uint64set.Set, retention
 		return nil, err
 	}
 
-	// Create directories for small and big partitions if they don't exist yet.
+	// Create directories for small and big partitions if they don't exist yet.  //只有一个table, table分为big和small两部分。每个big/small下又有多个partition
 	smallPartitionsPath := path + "/small"
 	if err := fs.MkdirAllIfNotExist(smallPartitionsPath); err != nil {
 		return nil, fmt.Errorf("cannot create directory for small partitions %q: %w", smallPartitionsPath, err)
@@ -116,7 +116,7 @@ func openTable(path string, getDeletedMetricIDs func() *uint64set.Set, retention
 	}
 
 	// Open partitions.
-	pts, err := openPartitions(smallPartitionsPath, bigPartitionsPath, getDeletedMetricIDs, retentionMsecs)
+	pts, err := openPartitions(smallPartitionsPath, bigPartitionsPath, getDeletedMetricIDs, retentionMsecs)  //打开partition
 	if err != nil {
 		return nil, fmt.Errorf("cannot open partitions in the table %q: %w", path, err)
 	}
@@ -133,10 +133,10 @@ func openTable(path string, getDeletedMetricIDs func() *uint64set.Set, retention
 		stop: make(chan struct{}),
 	}
 	for _, pt := range pts {
-		tb.addPartitionNolock(pt)
+		tb.addPartitionNolock(pt)  // 把 partition 加到 table 对象上面
 	}
-	tb.startRetentionWatcher()
-	tb.startFinalDedupWatcher()
+	tb.startRetentionWatcher()  // 每分钟检查一次，partition是否过期
+	tb.startFinalDedupWatcher()  // 每小时一次
 	return tb, nil
 }
 
@@ -406,7 +406,7 @@ func (tb *table) retentionWatcher() {
 		select {
 		case <-tb.stop:
 			return
-		case <-ticker.C:
+		case <-ticker.C:  // 阻塞一分钟
 		}
 
 		minTimestamp := int64(fasttime.UnixTimestamp()*1000) - tb.retentionMsecs
@@ -433,7 +433,7 @@ func (tb *table) retentionWatcher() {
 		// closed and dropped after all the pending searches are done.
 		for _, ptw := range ptwsDrop {
 			ptw.scheduleToDrop()
-			ptw.decRef()
+			ptw.decRef()  // 超过管理时间范围以外的partition, 通过触发引用计数为0来删除老文件
 		}
 	}
 }
@@ -473,7 +473,7 @@ func (tb *table) finalDedupWatcher() {
 		select {
 		case <-tb.stop:
 			return
-		case <-t.C:
+		case <-t.C:  //阻塞一小时
 			f()
 		}
 	}
@@ -503,9 +503,9 @@ func (tb *table) PutPartitions(ptws []*partitionWrapper) {
 
 func openPartitions(smallPartitionsPath, bigPartitionsPath string, getDeletedMetricIDs func() *uint64set.Set, retentionMsecs int64) ([]*partition, error) {
 	// Certain partition directories in either `big` or `small` dir may be missing
-	// after restoring from backup. So populate partition names from both dirs.
+	// after restoring from backup. So populate partition names from both dirs.  // 打开partition
 	ptNames := make(map[string]bool)
-	if err := populatePartitionNames(smallPartitionsPath, ptNames); err != nil {
+	if err := populatePartitionNames(smallPartitionsPath, ptNames); err != nil {  //遍历目录
 		return nil, err
 	}
 	if err := populatePartitionNames(bigPartitionsPath, ptNames); err != nil {
@@ -525,7 +525,7 @@ func openPartitions(smallPartitionsPath, bigPartitionsPath string, getDeletedMet
 	return pts, nil
 }
 
-func populatePartitionNames(partitionsPath string, ptNames map[string]bool) error {
+func populatePartitionNames(partitionsPath string, ptNames map[string]bool) error {  //遍历目录，返回合法的partition目录名称
 	d, err := os.Open(partitionsPath)
 	if err != nil {
 		return fmt.Errorf("cannot open directory with partitions %q: %w", partitionsPath, err)

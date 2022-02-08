@@ -32,9 +32,9 @@ type partSearch struct {
 
 	metaindex []metaindexRow
 
-	ibCache *indexBlockCache
+	ibCache *indexBlockCache  // key:偏移量  value: indexBlock对象
 
-	bhs []blockHeader
+	bhs []blockHeader   // 代表本次搜索到的内容
 
 	compressedIndexBuf []byte
 	indexBuf           []byte
@@ -124,7 +124,7 @@ func (ps *partSearch) nextTSID() bool {
 }
 
 func (ps *partSearch) nextBHS() bool {
-	for len(ps.metaindex) > 0 {
+	for len(ps.metaindex) > 0 {  // metaindex 是来自 metaindex.bin中的信息
 		// Optimization: skip tsid values smaller than the minimum value
 		// from ps.metaindex.
 		for ps.BlockRef.bh.TSID.Less(&ps.metaindex[0].TSID) {
@@ -155,11 +155,11 @@ func (ps *partSearch) nextBHS() bool {
 		// Found the index block which may contain the required data
 		// for the ps.BlockRef.bh.TSID and the given timestamp range.
 		indexBlockKey := mr.IndexBlockOffset
-		ib := ps.ibCache.Get(indexBlockKey)
+		ib := ps.ibCache.Get(indexBlockKey)  //缓存中如果没有对应的块，就从磁盘加载
 		if ib == nil {
 			// Slow path - actually read and unpack the index block.
 			var err error
-			ib, err = ps.readIndexBlock(mr)
+			ib, err = ps.readIndexBlock(mr)  // 根据 metaindexRow，加载 index.bin中的数据
 			if err != nil {
 				ps.err = fmt.Errorf("cannot read index block for part %q at offset %d with size %d: %w",
 					&ps.p.ph, mr.IndexBlockOffset, mr.IndexBlockSize, err)
@@ -167,7 +167,7 @@ func (ps *partSearch) nextBHS() bool {
 			}
 			ps.ibCache.Put(indexBlockKey, ib)
 		}
-		ps.bhs = ib.bhs
+		ps.bhs = ib.bhs  // 数组  []blockHeader
 		return true
 	}
 
@@ -209,9 +209,9 @@ func skipSmallMetaindexRows(metaindex []metaindexRow, tsid *TSID) []metaindexRow
 	return metaindex[n-1:]
 }
 
-func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {
+func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {  // 根据metaindex.bin中的metaindexRow，从index.bin中读数据
 	ps.compressedIndexBuf = bytesutil.Resize(ps.compressedIndexBuf[:0], int(mr.IndexBlockSize))
-	ps.p.indexFile.MustReadAt(ps.compressedIndexBuf, int64(mr.IndexBlockOffset))
+	ps.p.indexFile.MustReadAt(ps.compressedIndexBuf, int64(mr.IndexBlockOffset))  //从index.bin读取内容
 
 	var err error
 	ps.indexBuf, err = encoding.DecompressZSTD(ps.indexBuf[:0], ps.compressedIndexBuf)
@@ -219,7 +219,7 @@ func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {
 		return nil, fmt.Errorf("cannot decompress index block: %w", err)
 	}
 	ib := &indexBlock{}
-	ib.bhs, err = unmarshalBlockHeaders(ib.bhs[:0], ps.indexBuf, int(mr.BlockHeadersCount))
+	ib.bhs, err = unmarshalBlockHeaders(ib.bhs[:0], ps.indexBuf, int(mr.BlockHeadersCount))  //返回根据tsid排序的数组
 	if err != nil {
 		return nil, fmt.Errorf("cannot unmarshal index block: %w", err)
 	}

@@ -141,7 +141,7 @@ type MetricName struct {
 
 	// Tags are optional. They must be sorted by tag Key for canonical view.
 	// Use sortTags method.
-	Tags []Tag
+	Tags []Tag  // label name + label value
 }
 
 // GetMetricName returns a MetricName from pool.
@@ -394,7 +394,7 @@ func (mn *MetricName) Marshal(dst []byte) []byte {
 }
 
 // Unmarshal unmarshals mn from src.
-func (mn *MetricName) Unmarshal(src []byte) error {
+func (mn *MetricName) Unmarshal(src []byte) error {  // 把原始的序列化的[]byte的time series，还原为具体的结构
 	if len(src) < 8 {
 		return fmt.Errorf("too short src: %d bytes; must be at least % bytes", len(src), 8)
 	}

@@ -14,10 +14,10 @@ import (
 // by timestamp.
 //
 // A single time series may span multiple blocks.
-type blockHeader struct {
+type blockHeader struct {  // 包含在 indexBlock 中
 	// TSID is the TSID for the block.
 	// Multiple blocks may have the same TSID.
-	TSID TSID
+	TSID TSID  //一个block一定只有一个tsid
 
 	// MinTimestamp is the minimum timestamp in the block.
 	//
@@ -38,11 +38,11 @@ type blockHeader struct {
 
 	// TimestampsBlockOffset is the offset in bytes for a block
 	// with timestamps in timestamps file.
-	TimestampsBlockOffset uint64
+	TimestampsBlockOffset uint64  // timestamp.bin
 
 	// ValuesBlockOffset is the offset in bytes for a block with values
 	// in values file.
-	ValuesBlockOffset uint64
+	ValuesBlockOffset uint64  // values.bin
 
 	// TimestampsBlocksSize is the size in bytes for a block with timestamps.
 	TimestampsBlockSize uint32
@@ -114,7 +114,7 @@ func (bh *blockHeader) Marshal(dst []byte) []byte {
 }
 
 // Unmarshal unmarshals bh from src and returns the rest of src.
-func (bh *blockHeader) Unmarshal(src []byte) ([]byte, error) {
+func (bh *blockHeader) Unmarshal(src []byte) ([]byte, error) {  // 反序列化的数据一般来自 index.bin
 	if len(src) < marshaledBlockHeaderSize {
 		return src, fmt.Errorf("too short block header; got %d bytes; want %d bytes", len(src), marshaledBlockHeaderSize)
 	}
@@ -179,10 +179,10 @@ func (bh *blockHeader) validate() error {
 	return nil
 }
 
-// unmarshalBlockHeaders unmarshals all the block headers from src,
+// unmarshalBlockHeaders unmarshals all the block headers from src,  // 反序列化的数据一般来自 index.bin
 // appends them to dst and returns the appended result.
 //
-// Block headers must be sorted by bh.TSID.
+// Block headers must be sorted by bh.TSID.  //从原始数据反序列化，返回根据TSID排序的blockHeader数组
 func unmarshalBlockHeaders(dst []blockHeader, src []byte, blockHeadersCount int) ([]blockHeader, error) {
 	if blockHeadersCount <= 0 {
 		logger.Panicf("BUG: blockHeadersCount must be greater than zero; got %d", blockHeadersCount)

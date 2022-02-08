@@ -16,6 +16,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bloomfilter"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/decimal"
@@ -28,7 +30,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/timerpool"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/uint64set"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/workingsetcache"
-	"github.com/VictoriaMetrics/fastcache"
 )
 
 const (
@@ -98,7 +99,7 @@ type Storage struct {
 
 	// Pending MetricID values to be added to currHourMetricIDs.
 	pendingHourEntriesLock sync.Mutex
-	pendingHourEntries     []pendingHourMetricIDEntry
+	pendingHourEntries     []pendingHourMetricIDEntry  // 存储每小时的新的 time series
 
 	// Pending MetricIDs to be added to nextDayMetricIDs.
 	pendingNextDayMetricIDsLock sync.Mutex
@@ -674,7 +675,7 @@ func (s *Storage) startNextDayMetricIDsUpdater() {
 var currHourMetricIDsUpdateInterval = time.Second * 10
 
 func (s *Storage) currHourMetricIDsUpdater() {
-	ticker := time.NewTicker(currHourMetricIDsUpdateInterval)
+	ticker := time.NewTicker(currHourMetricIDsUpdateInterval)  //10秒
 	defer ticker.Stop()
 	for {
 		select {
@@ -1653,7 +1654,7 @@ func (s *Storage) AddRows(mrs []MetricRow, precisionBits uint8) error {  // 每�
 		t := timerpool.Get(addRowsTimeout)
 
 		// Prioritize data ingestion over concurrent searches.
-		storagepacelimiter.Search.Inc()
+		storagepacelimiter.Search.Inc()  // 告诉 search 协程，有一个写进入了等待
 
 		select {
 		case addRowsConcurrencyCh <- struct{}{}:
@@ -1817,7 +1818,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 				continue
 			}
 		}
-		if mr.Timestamp < minTimestamp {
+		if mr.Timestamp < minTimestamp {  // 比31天前还小，丢弃
 			// Skip rows with too small timestamps outside the retention.
 			if firstWarn == nil {
 				metricName := getUserReadableMetricName(mr.MetricNameRaw)
@@ -1828,7 +1829,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 			atomic.AddUint64(&s.tooSmallTimestampRows, 1)
 			continue
 		}
-		if mr.Timestamp > maxTimestamp {
+		if mr.Timestamp > maxTimestamp {  // 比将来2小时还大，丢弃
 			// Skip rows with too big timestamps significantly exceeding the current time.
 			if firstWarn == nil {
 				metricName := getUserReadableMetricName(mr.MetricNameRaw)
@@ -1837,14 +1838,14 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 			}
 			atomic.AddUint64(&s.tooBigTimestampRows, 1)
 			continue
-		}
+		}  // 以上时间的检查，证明VM对 time series的时间范围的检查相当宽松。这一点与prometheus / thanos 很不同
 		dstMrs[j] = mr
 		r := &rows[j]
 		j++
 		r.Timestamp = mr.Timestamp
 		r.Value = mr.Value
 		r.PrecisionBits = precisionBits  // 默认 64 位精度
-		if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {
+		if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {  // todo: 这里的string()会带来拷贝，值得优化
 			// Fast path - the current mr contains the same metric name as the previous mr, so it contains the same TSID.
 			// This path should trigger on bulk imports when many rows contain the same MetricNameRaw.
 			r.TSID = prevTSID
@@ -1899,7 +1900,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 			r.Timestamp = mr.Timestamp
 			r.Value = mr.Value
 			r.PrecisionBits = precisionBits
-			if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {
+			if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {  // todo: string() 值得优化
 				// Fast path - the current mr contains the same metric name as the previous mr, so it contains the same TSID.
 				// This path should trigger on bulk imports when many rows contain the same MetricNameRaw.
 				r.TSID = prevTSID
@@ -2434,10 +2435,10 @@ func (s *Storage) updateNextDayMetricIDs() {
 	s.nextDayMetricIDs.Store(eNew)
 }
 
-func (s *Storage) updateCurrHourMetricIDs() {
+func (s *Storage) updateCurrHourMetricIDs() {  // 每10秒执行一次
 	hm := s.currHourMetricIDs.Load().(*hourMetricIDs)
 	s.pendingHourEntriesLock.Lock()
-	newEntries := append([]pendingHourMetricIDEntry{}, s.pendingHourEntries...)
+	newEntries := append([]pendingHourMetricIDEntry{}, s.pendingHourEntries...)  // 把最近10秒的time series数据转移到另一个结构
 	s.pendingHourEntries = s.pendingHourEntries[:0]
 	s.pendingHourEntriesLock.Unlock()
 	hour := fasttime.UnixHour()

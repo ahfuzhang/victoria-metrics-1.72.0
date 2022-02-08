@@ -16,7 +16,7 @@ import (
 
 func getMaxCachedIndexBlocksPerPart() int {
 	maxCachedIndexBlocksPerPartOnce.Do(func() {
-		n := memory.Allowed() / 1024 / 1024 / 4
+		n := memory.Allowed() / 1024 / 1024 / 4  // 假设最大4GB内存,则 n=256
 		if n == 0 {
 			n = 10
 		}
@@ -53,11 +53,11 @@ type part struct {  // 所有的time series应该是排序后存储的，每个p
 
 	size uint64
 
-	mrs []metaindexRow  //这个是个啥, index block
-
-	indexFile fs.MustReadAtCloser
-	itemsFile fs.MustReadAtCloser
-	lensFile  fs.MustReadAtCloser
+	mrs []metaindexRow  //这个数组的内容来自对 metaindex.bin文件的解析
+		// 数组按照 firstItem 来排序，便于做二分查找
+	indexFile fs.MustReadAtCloser  // 三个内存映射文件  index.bin
+	itemsFile fs.MustReadAtCloser  //  items.bin
+	lensFile  fs.MustReadAtCloser  // lens.bin
 
 	idxbCache *indexBlockCache
 	ibCache   *inmemoryBlockCache
@@ -103,7 +103,7 @@ func newPart(ph *partHeader, path string, size uint64, metaindexReader filestrea
 	metaindexReader.MustClose()
 
 	var p part
-	p.path = path
+	p.path = path  // path为空字符串，说明是一个 inmemory part
 	p.size = size
 	p.mrs = mrs  // []metaindexRow 数组的内容
 
@@ -133,8 +133,8 @@ func (p *part) MustClose() {
 	p.ibCache.MustClose()
 }
 
-type indexBlock struct {
-	bhs []blockHeader
+type indexBlock struct {  // 可能是 index 的块结构，内容来自 index.bin 文件
+	bhs []blockHeader  // 按照 first item排序的数组，可用于二分查找
 }
 
 func (idxb *indexBlock) SizeBytes() int {
@@ -200,9 +200,9 @@ func (idxbc *indexBlockCache) cleaner() {
 	defer perKeyMissesTicker.Stop()
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.C:  // 每30秒触发
 			idxbc.cleanByTimeout()
-		case <-perKeyMissesTicker.C:
+		case <-perKeyMissesTicker.C:  // 每2分钟触发
 			idxbc.perKeyMissesLock.Lock()
 			idxbc.perKeyMisses = make(map[uint64]int, len(idxbc.perKeyMisses))
 			idxbc.perKeyMissesLock.Unlock()
@@ -305,7 +305,7 @@ func (idxbc *indexBlockCache) SizeMaxBytes() uint64 {
 	return uint64(avgBlockSize * float64(getMaxCachedIndexBlocksPerPart()))
 }
 
-func (idxbc *indexBlockCache) Requests() uint64 {
+func (idxbc *indexBlockCache) Requests() uint64 {  // 统计数据
 	return atomic.LoadUint64(&idxbc.requests)
 }
 
@@ -313,7 +313,7 @@ func (idxbc *indexBlockCache) Misses() uint64 {
 	return atomic.LoadUint64(&idxbc.misses)
 }
 
-type inmemoryBlockCache struct {
+type inmemoryBlockCache struct {  // key为偏移量， value为 inmemoryBlock对象
 	// Atomically updated counters must go first in the struct, so they are properly
 	// aligned to 8 bytes on 32-bit architectures.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
@@ -331,7 +331,7 @@ type inmemoryBlockCache struct {
 }
 
 type inmemoryBlockCacheKey struct {
-	itemsBlockOffset uint64
+	itemsBlockOffset uint64  // 以偏移量作为cache的key
 }
 
 func (ibck *inmemoryBlockCacheKey) Init(bh *blockHeader) {

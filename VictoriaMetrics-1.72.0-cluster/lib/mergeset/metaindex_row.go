@@ -10,19 +10,19 @@ import (
 )
 
 // metaindexRow describes a block of blockHeaders aka index block.
-type metaindexRow struct {
+type metaindexRow struct {  // 每个part包含很多个block，这个结构关联到 indexBlock对象
 	// First item in the first block.
 	// It is used for fast lookup of the required index block.
-	firstItem []byte  // 第一条 time series的原始内容
+	firstItem []byte  // 第一条 time series的原始内容 (在序列化好的time series的基础上，前后各加了一个字节)
 
 	// The number of blockHeaders the block contains.
-	blockHeadersCount uint32
+	blockHeadersCount uint32  // block的数量
 
 	// The offset of the block in the index file.
-	indexBlockOffset uint64
+	indexBlockOffset uint64   // index.bin 文件中的偏移量，同时还会作为fastcache中的key来使用
 
 	// The size of the block in the index file.
-	indexBlockSize uint32
+	indexBlockSize uint32  // 块的字节数
 }
 
 func (mr *metaindexRow) Reset() {
@@ -32,7 +32,7 @@ func (mr *metaindexRow) Reset() {
 	mr.indexBlockSize = 0
 }
 
-func (mr *metaindexRow) Marshal(dst []byte) []byte {
+func (mr *metaindexRow) Marshal(dst []byte) []byte {  // 序列化 metaindex的数据
 	dst = encoding.MarshalBytes(dst, mr.firstItem)
 	dst = encoding.MarshalUint32(dst, mr.blockHeadersCount)
 	dst = encoding.MarshalUint64(dst, mr.indexBlockOffset)
@@ -81,7 +81,7 @@ func (mr *metaindexRow) Unmarshal(src []byte) ([]byte, error) {  // 解析一条
 }
 
 func unmarshalMetaindexRows(dst []metaindexRow, r io.Reader) ([]metaindexRow, error) {  // 解析metaindex.bin
-	// It is ok to read all the metaindex in memory,
+	// It is ok to read all the metaindex in memory,   // 返回一个排好序的数组
 	// since it is quite small.
 	compressedData, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -112,7 +112,7 @@ func unmarshalMetaindexRows(dst []metaindexRow, r io.Reader) ([]metaindexRow, er
 
 	// Make sure metaindexRows are sorted by firstItem.
 	tmp := dst[dstLen:]
-	ok := sort.SliceIsSorted(tmp, func(i, j int) bool {
+	ok := sort.SliceIsSorted(tmp, func(i, j int) bool {  // 数组按照first item排序，便于做二分查找
 		return string(tmp[i].firstItem) < string(tmp[j].firstItem)
 	})
 	if !ok {

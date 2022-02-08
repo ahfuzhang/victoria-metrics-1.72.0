@@ -237,7 +237,7 @@ func createPartition(timestamp int64, smallPartitionsPath, bigPartitionsPath str
 // Drop drops all the data on the storage for the given pt.
 //
 // The pt must be detached from table before calling pt.Drop.
-func (pt *partition) Drop() {
+func (pt *partition) Drop() {  //删除目录下的所有文件
 	logger.Infof("dropping partition %q at smallPartsPath=%q, bigPartsPath=%q", pt.name, pt.smallPartsPath, pt.bigPartsPath)
 	// Wait until all the pending transaction deletions are finished before removing partition directories.
 	pendingTxnDeletionsWG.Wait()
@@ -262,7 +262,7 @@ func openPartition(smallPartsPath, bigPartsPath string, getDeletedMetricIDs func
 		return nil, fmt.Errorf("patititon name in bigPartsPath %q doesn't match smallPartsPath %q; want %q", bigPartsPath, smallPartsPath, name)
 	}
 
-	smallParts, err := openParts(smallPartsPath, bigPartsPath, smallPartsPath)
+	smallParts, err := openParts(smallPartsPath, bigPartsPath, smallPartsPath)  //打开分区下的多个parts目录
 	if err != nil {
 		return nil, fmt.Errorf("cannot open small parts from %q: %w", smallPartsPath, err)
 	}
@@ -613,7 +613,7 @@ func (pt *partition) PutParts(pws []*partWrapper) {
 // MustClose closes the pt, so the app may safely exit.
 //
 // The pt must be detached from table before calling pt.MustClose.
-func (pt *partition) MustClose() {
+func (pt *partition) MustClose() {  // 关闭 partition 对象
 	close(pt.stopCh)
 
 	// Wait until all the pending transaction deletions are finished.
@@ -1067,7 +1067,7 @@ func atomicSetBool(p *uint64, b bool) {
 	atomic.StoreUint64(p, v)
 }
 
-func (pt *partition) runFinalDedup() error {
+func (pt *partition) runFinalDedup() error {  // 每小时触发一次, tb.startFinalDedupWatcher()
 	requiredDedupInterval, actualDedupInterval := pt.getRequiredDedupInterval()
 	if requiredDedupInterval <= actualDedupInterval {
 		// Deduplication isn't needed.
@@ -1678,7 +1678,7 @@ func (pt *partition) createSnapshot(srcDir, dstDir string) error {
 	return nil
 }
 
-func runTransactions(txnLock *sync.RWMutex, pathPrefix1, pathPrefix2, path string) error {
+func runTransactions(txnLock *sync.RWMutex, pathPrefix1, pathPrefix2, path string) error {  // 与 /txn目录有关
 	// Wait until all the previous pending transaction deletions are finished.
 	pendingTxnDeletionsWG.Wait()
 
@@ -1718,8 +1718,8 @@ func runTransactions(txnLock *sync.RWMutex, pathPrefix1, pathPrefix2, path strin
 	}
 	return nil
 }
-
-func runTransaction(txnLock *sync.RWMutex, pathPrefix1, pathPrefix2, txnPath string) error {
+// 所谓的事务是用来干嘛的呢？
+func runTransaction(txnLock *sync.RWMutex, pathPrefix1, pathPrefix2, txnPath string) error {  // txn 目录下的每个文件触发一次这个调用
 	// The transaction must run under read lock in order to provide
 	// consistent snapshots with partition.CreateSnapshot().
 	txnLock.RLock()

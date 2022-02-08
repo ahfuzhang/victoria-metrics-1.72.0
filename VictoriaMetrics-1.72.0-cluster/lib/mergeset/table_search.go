@@ -76,7 +76,7 @@ func (ts *TableSearch) Init(tb *Table) {  // 初始化 table search对象
 	}
 	ts.psPool = ts.psPool[:len(ts.pws)]
 	for i, pw := range ts.pws {
-		ts.psPool[i].Init(pw.p)
+		ts.psPool[i].Init(pw.p)  // 从 part 对象拷贝过来
 	}
 }
 
@@ -90,10 +90,10 @@ func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜�
 
 	// Initialize the psHeap.
 	var errors []error
-	ts.psHeap = ts.psHeap[:0]
-	for i := range ts.psPool {
+	ts.psHeap = ts.psHeap[:0]  // 数组清空
+	for i := range ts.psPool {  // psPool 是 part search对象的数组
 		ps := &ts.psPool[i]
-		ps.Seek(k)
+		ps.Seek(k)  // 在每个part search 中继续搜索
 		if !ps.NextItem() {
 			if err := ps.Error(); err != nil {
 				errors = append(errors, err)

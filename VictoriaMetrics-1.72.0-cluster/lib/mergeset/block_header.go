@@ -20,19 +20,19 @@ type blockHeader struct {
 	marshalType marshalType
 
 	// The number of items in the block, excluding the first item.
-	itemsCount uint32
+	itemsCount uint32  // 猜测是指存在多少个 time series
 
 	// The offset of the items block.
-	itemsBlockOffset uint64
+	itemsBlockOffset uint64  // 在 items.bin 中的偏移量
 
 	// The offset of the lens block.
-	lensBlockOffset uint64
+	lensBlockOffset uint64  // 在 lens.bin 中的偏移量
 
 	// The size of the items block.
-	itemsBlockSize uint32
+	itemsBlockSize uint32  // 在 items.bin 中的长度
 
 	// The size of the lens block.
-	lensBlockSize uint32
+	lensBlockSize uint32  // 在 lens.bin 中的长度
 }
 
 func (bh *blockHeader) SizeBytes() int {
@@ -140,7 +140,7 @@ func (bh *blockHeader) Unmarshal(src []byte) ([]byte, error) {
 // unmarshalBlockHeaders unmarshals all the block headers from src,
 // appends them to dst and returns the appended result.
 //
-// Block headers must be sorted by bh.firstItem.
+// Block headers must be sorted by bh.firstItem.  // 返回按照firstItem排序的blockHeader的数组
 func unmarshalBlockHeaders(dst []blockHeader, src []byte, blockHeadersCount int) ([]blockHeader, error) {
 	if blockHeadersCount <= 0 {
 		logger.Panicf("BUG: blockHeadersCount must be greater than 0; got %d", blockHeadersCount)

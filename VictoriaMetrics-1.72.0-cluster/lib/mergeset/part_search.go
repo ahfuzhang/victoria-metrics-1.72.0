@@ -20,23 +20,23 @@ type partSearch struct {
 	p *part  // 每个part search指向对应的 part
 
 	// The remaining metaindex rows to scan, obtained from p.mrs.
-	mrs []metaindexRow
+	mrs []metaindexRow  // 这个数组直接复制 part 对象中的对应数组
 
 	// The remaining block headers to scan in the current metaindexRow.
-	bhs []blockHeader
+	bhs []blockHeader  // 当前扫描到的 metaindexRow中的 blockHeader 数组
 
-	idxbCache *indexBlockCache
-	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找
+	idxbCache *indexBlockCache  // indexBlock对象的fastcache, 以 metaindexRow中的偏移量信息为key
+	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找。 每个inmemoryBlock对象是64KB
 
 	// err contains the last error.
 	err error
 
 	indexBuf           []byte
-	compressedIndexBuf []byte
+	compressedIndexBuf []byte  // 这些临时对象其实不用放在这里。但是放在这里的话，能够减少GC
 
-	sb storageBlock
+	sb storageBlock  // 缓存从items.bin, lens.bin中读出的数据
 
-	ib        *inmemoryBlock
+	ib        *inmemoryBlock  // 当前搜索到的块里面的多个 time series
 	ibItemIdx int
 }
 
@@ -70,7 +70,7 @@ func (ps *partSearch) Init(p *part) {
 }
 
 // Seek seeks for the first item greater or equal to k in ps.
-func (ps *partSearch) Seek(k []byte) {
+func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time series数据进行搜索
 	if err := ps.Error(); err != nil {
 		// Do nothing on unrecoverable error.
 		return
@@ -78,30 +78,30 @@ func (ps *partSearch) Seek(k []byte) {
 	ps.err = nil
 
 	if string(k) > string(ps.p.ph.lastItem) {  // part 与 part 之间是排序的吗？
-		// Not matching items in the part.
+		// Not matching items in the part.  // todo: string() 值得优化
 		ps.err = io.EOF
-		return
+		return  // 如果 time sereis比 part 的最后一个 item 还要大，说明数据不在这个part里，返回EOF
 	}
 
-	if ps.tryFastSeek(k) {
+	if ps.tryFastSeek(k) {  //  在 in-memory block中搜索
 		return
 	}
 
 	ps.Item = nil
-	ps.mrs = ps.p.mrs
+	ps.mrs = ps.p.mrs  // 复制排序了的 metaindex
 	ps.bhs = nil
 
 	ps.indexBuf = ps.indexBuf[:0]
 	ps.compressedIndexBuf = ps.compressedIndexBuf[:0]
 
-	ps.sb.Reset()  // sb storageBlock，一个空的容器，用来存放什么东西的
+	ps.sb.Reset()  // sb storageBlock，一个空的容器，用来存放从items.bin, lens.bin中加载的内容
 
 	ps.ib = nil
 	ps.ibItemIdx = 0
 
 	if string(k) <= string(ps.p.ph.firstItem) {  // 如果比第一个time sereis还要小
 		// The first item in the first block matches.
-		ps.err = ps.nextBlock()
+		ps.err = ps.nextBlock()  // 没看懂，这里为什么是 nextBlock ?
 		return
 	}
 
@@ -109,8 +109,8 @@ func (ps *partSearch) Seek(k []byte) {
 	if len(ps.mrs) == 0 {
 		logger.Panicf("BUG: part without metaindex rows passed to partSearch")
 	}
-	n := sort.Search(len(ps.mrs), func(i int) bool {
-		return string(k) <= string(ps.mrs[i].firstItem)
+	n := sort.Search(len(ps.mrs), func(i int) bool {  // 二分查找
+		return string(k) <= string(ps.mrs[i].firstItem)  // todo: 优化string()
 	})
 	if n > 0 {
 		// The given k may be located in the previous metaindexRow, so go to it.
@@ -178,17 +178,17 @@ func (ps *partSearch) tryFastSeek(k []byte) bool {
 		// The ib is exhausted.  耗尽了
 		return false
 	}
-	if string(k) > items[len(items)-1].String(data) {
+	if string(k) > items[len(items)-1].String(data) {  //比最后一个time series还大，说明不在这个 inmemoryBlock里面
 		// The item is located in next blocks.
 		return false
 	}
 
 	// The item is located either in the current block or in previous blocks.
 	if idx > 0 {
-		idx--
+		idx--  // idx是干嘛的？没看懂
 	}
-	if string(k) < items[idx].String(data) {
-		if string(k) < items[0].String(data) {
+	if string(k) < items[idx].String(data) {  // todo: 优化string()
+		if string(k) < items[0].String(data) {  // 在上次查询的index的基础上继续查找???
 			// The item is located in previous blocks.
 			return false
 		}
@@ -265,27 +265,27 @@ func (ps *partSearch) nextBHS() error {
 	idxb := ps.idxbCache.Get(idxbKey)
 	if idxb == nil {
 		var err error
-		idxb, err = ps.readIndexBlock(mr)
+		idxb, err = ps.readIndexBlock(mr)  //读取index.bin文件，返回index block对象
 		if err != nil {
 			return fmt.Errorf("cannot read index block: %w", err)
 		}
-		ps.idxbCache.Put(idxbKey, idxb)
+		ps.idxbCache.Put(idxbKey, idxb)  // 以偏移量为key，写入indexBlock对象
 	}
 	ps.bhs = idxb.bhs
 	return nil
 }
 
-func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {
+func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {  // 通过 metaindexRow的信息，加载 index.bin 中的信息，返回indexBlock对象
 	ps.compressedIndexBuf = bytesutil.Resize(ps.compressedIndexBuf, int(mr.indexBlockSize))
 	ps.p.indexFile.MustReadAt(ps.compressedIndexBuf, int64(mr.indexBlockOffset))
 
 	var err error
-	ps.indexBuf, err = encoding.DecompressZSTD(ps.indexBuf[:0], ps.compressedIndexBuf)
+	ps.indexBuf, err = encoding.DecompressZSTD(ps.indexBuf[:0], ps.compressedIndexBuf)  // 每个 index.bin 中的block同样是ZSTD压缩的
 	if err != nil {
 		return nil, fmt.Errorf("cannot decompress index block: %w", err)
 	}
 	idxb := &indexBlock{}
-	idxb.bhs, err = unmarshalBlockHeaders(idxb.bhs[:0], ps.indexBuf, int(mr.blockHeadersCount))
+	idxb.bhs, err = unmarshalBlockHeaders(idxb.bhs[:0], ps.indexBuf, int(mr.blockHeadersCount))  // 解析结构，并按照first item排序，便于后续做二分查找
 	if err != nil {
 		return nil, fmt.Errorf("cannot unmarshal block headers from index block (offset=%d, size=%d): %w", mr.indexBlockOffset, mr.indexBlockSize, err)
 	}
@@ -294,21 +294,21 @@ func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {
 
 func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {
 	var ibKey inmemoryBlockCacheKey
-	ibKey.Init(bh)
+	ibKey.Init(bh)  // 以偏移量作为cache的key
 	ib := ps.ibCache.Get(ibKey)
 	if ib != nil {
 		return ib, nil
 	}
-	ib, err := ps.readInmemoryBlock(bh)
+	ib, err := ps.readInmemoryBlock(bh)  // 从文件加载数据到 inmemoryBlock
 	if err != nil {
 		return nil, err
 	}
-	ps.ibCache.Put(ibKey, ib)
+	ps.ibCache.Put(ibKey, ib)  // 放到 index block cache 中
 	return ib, nil
 }
 
-func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {
-	ps.sb.Reset()
+func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {  // 根据blockHeader的信息，加载items.bin和lens.bin文件中的对应信息
+	ps.sb.Reset()  // storageBlock
 
 	ps.sb.itemsData = bytesutil.Resize(ps.sb.itemsData, int(bh.itemsBlockSize))
 	ps.p.itemsFile.MustReadAt(ps.sb.itemsData, int64(bh.itemsBlockOffset))
@@ -317,9 +317,9 @@ func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error)
 	ps.p.lensFile.MustReadAt(ps.sb.lensData, int64(bh.lensBlockOffset))
 
 	ib := getInmemoryBlock()
-	if err := ib.UnmarshalData(&ps.sb, bh.firstItem, bh.commonPrefix, bh.itemsCount, bh.marshalType); err != nil {
+	if err := ib.UnmarshalData(&ps.sb, bh.firstItem, bh.commonPrefix, bh.itemsCount, bh.marshalType); err != nil {  // 把文件中的内容，加载到对象
 		return nil, fmt.Errorf("cannot unmarshal storage block with %d items: %w", bh.itemsCount, err)
-	}
+	}  // 从items.bin, lens.bin中读出数据，然后填充到 inmemoryBlock对象中
 
 	return ib, nil
 }

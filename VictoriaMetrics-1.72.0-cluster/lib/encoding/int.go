@@ -1,4 +1,4 @@
-package encoding
+﻿package encoding
 
 import (
 	"encoding/binary"

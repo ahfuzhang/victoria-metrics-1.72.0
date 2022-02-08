@@ -12,7 +12,7 @@ import (
 // metaindexRow is a single metaindex row.
 //
 // The row points to a single index block containing block headers.
-type metaindexRow struct {
+type metaindexRow struct {  // 数据文件中的 metaindex
 	// TSID is the first TSID in the corresponding index block.
 	TSID TSID
 
@@ -23,11 +23,11 @@ type metaindexRow struct {
 	MaxTimestamp int64
 
 	// IndexBlockOffset is the offset of index block.
-	IndexBlockOffset uint64
+	IndexBlockOffset uint64  // 偏移量
 
 	// BlockHeadersCount is the number of block headers
 	// in the given index block.
-	BlockHeadersCount uint32
+	BlockHeadersCount uint32  // block的数量
 
 	// IndexBlockSize is the size of compressed index block.
 	IndexBlockSize uint32

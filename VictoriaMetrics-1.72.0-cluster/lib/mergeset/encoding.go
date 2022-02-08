@@ -16,7 +16,7 @@ import (
 )
 
 // Item represents a single item for storing in a mergeset.
-type Item struct {
+type Item struct {  // 在一个大数组中的起止位置
 	// Start is start offset for the item in data.
 	Start uint32
 
@@ -27,7 +27,7 @@ type Item struct {
 // Bytes returns bytes representation of it obtained from data.
 //
 // The returned bytes representation belongs to data.
-func (it Item) Bytes(data []byte) []byte {
+func (it Item) Bytes(data []byte) []byte {  // 参数 data 其实没有必要。但是如果由外部传入，就不必再分配，对GC的优化达到了极致！牛逼
 	sh := (*reflect.SliceHeader)(unsafe.Pointer(&data))
 	sh.Cap = int(it.End - it.Start)
 	sh.Len = int(it.End - it.Start)
@@ -50,18 +50,18 @@ func (ib *inmemoryBlock) Len() int { return len(ib.items) }
 func (ib *inmemoryBlock) Less(i, j int) bool {  // 内部数组的排序
 	data := ib.data
 	items := ib.items
-	return string(items[i].Bytes(data)) < string(items[j].Bytes(data))
+	return string(items[i].Bytes(data)) < string(items[j].Bytes(data))  // todo: 优化string()的拷贝
 }
 
 func (ib *inmemoryBlock) Swap(i, j int) {
 	items := ib.items
-	items[i], items[j] = items[j], items[i]
+	items[i], items[j] = items[j], items[i]  // 排序的时候，不调整大数组的内容，只是调整items数组的内容。很巧妙，少了很多拷贝
 }
 
 type inmemoryBlock struct {  // 内存中的block是个重要的结构
-	commonPrefix []byte   // 前缀的内容，猜测是为了加速前缀匹配
-	data         []byte   // 把所有time sereies序列化后的内存顺序存放
-	items        []Item   //  记录每个time series在上述大数组中的偏移量
+	commonPrefix []byte   // 猜测是所有time series公共的前缀，也就是 __name__ 字段。需要进一步证实 ???
+	data         []byte   // 把所有time sereies序列化后的内存顺序存放。这里的数据很可能来自 items.bin
+	items        []Item   //  记录每个time series在上述大数组中的偏移量。这里的数据很可能来自 lens.bin
 }
 
 func (ib *inmemoryBlock) SizeBytes() int {
@@ -113,7 +113,7 @@ func commonPrefixLen(a, b []byte) int {
 //
 // false is returned if x isn't added to ib due to block size contraints.
 func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据
-	data := ib.data
+	data := ib.data  // 没看懂这个写法？ 是为了避免并发带来影响？还是为了编译期优化代码？
 	if len(x)+len(data) > maxInmemoryBlockSize {
 		return false
 	}
@@ -122,8 +122,8 @@ func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time
 		data = bytesutil.Resize(data, maxInmemoryBlockSize)[:dataLen]
 	}
 	dataLen := len(data)
-	data = append(data, x...)
-	ib.items = append(ib.items, Item{
+	data = append(data, x...)  // 在大数组中追加
+	ib.items = append(ib.items, Item{  // 用 items 数组说明time series在大数组中的位置
 		Start: uint32(dataLen),
 		End:   uint32(len(data)),
 	})
@@ -137,13 +137,13 @@ func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time
 const maxInmemoryBlockSize = 64 * 1024
 
 func (ib *inmemoryBlock) sort() {
-	sort.Sort(ib)
+	sort.Sort(ib)  // 对 items 数组排序
 	data := ib.data
 	items := ib.items
 	bb := bbPool.Get()
 	b := bytesutil.Resize(bb.B, len(data))
 	b = b[:0]
-	for i, it := range items {
+	for i, it := range items {  // 把data数组中的time series拷贝到新数组，然后新数组中的数据都是排序的了。（其实没必要）
 		bLen := len(b)
 		b = append(b, it.String(data)...)
 		items[i] = Item{
@@ -156,7 +156,7 @@ func (ib *inmemoryBlock) sort() {
 }
 
 // storageBlock represents a block of data on the storage.
-type storageBlock struct {
+type storageBlock struct {  // items.bin, lens.bin反序列化后的内容
 	itemsData []byte
 	lensData  []byte
 }
@@ -314,7 +314,7 @@ func (ib *inmemoryBlock) marshalData(sb *storageBlock, firstItemDst, commonPrefi
 // UnmarshalData decodes itemsCount items from sb and firstItem and stores
 // them to ib.
 func (ib *inmemoryBlock) UnmarshalData(sb *storageBlock, firstItem, commonPrefix []byte, itemsCount uint32, mt marshalType) error {
-	ib.Reset()
+	ib.Reset()  // 把 inmemoryBlock 清空
 
 	if itemsCount <= 0 {
 		logger.Panicf("BUG: cannot unmarshal zero items")
@@ -324,7 +324,7 @@ func (ib *inmemoryBlock) UnmarshalData(sb *storageBlock, firstItem, commonPrefix
 
 	switch mt {
 	case marshalTypePlain:
-		if err := ib.unmarshalDataPlain(sb, firstItem, itemsCount); err != nil {
+		if err := ib.unmarshalDataPlain(sb, firstItem, itemsCount); err != nil {  //从文件还原到对象
 			return fmt.Errorf("cannot unmarshal plain data: %w", err)
 		}
 		if !ib.isSorted() {
@@ -332,11 +332,11 @@ func (ib *inmemoryBlock) UnmarshalData(sb *storageBlock, firstItem, commonPrefix
 		}
 		return nil
 	case marshalTypeZSTD:
-		// it is handled below.
+		// it is handled below.  //应该写成个函数，这么写太令人疑惑了
 	default:
 		return fmt.Errorf("unknown marshalType=%d", mt)
 	}
-
+	// 如果索引使用ZSTD压缩了，下面是处理过程
 	// Unmarshal mt = marshalTypeZSTD
 
 	bb := bbPool.Get()
@@ -465,7 +465,7 @@ func (ib *inmemoryBlock) marshalDataPlain(sb *storageBlock) {
 	sb.lensData = b
 }
 
-func (ib *inmemoryBlock) unmarshalDataPlain(sb *storageBlock, firstItem []byte, itemsCount uint32) error {
+func (ib *inmemoryBlock) unmarshalDataPlain(sb *storageBlock, firstItem []byte, itemsCount uint32) error {  // 根据storageBlock中的数据，来填充inmemoryBlock对象
 	commonPrefix := ib.commonPrefix
 
 	// Unmarshal lens data.

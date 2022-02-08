@@ -52,7 +52,7 @@ type part struct {  // 每个 part 管理一部分 tsid
 }
 
 // openFilePart opens file-based part from the given path.
-func openFilePart(path string) (*part, error) {
+func openFilePart(path string) (*part, error) {  //打开各个bin文件
 	path = filepath.Clean(path)
 
 	var ph partHeader
@@ -92,7 +92,7 @@ func openFilePart(path string) (*part, error) {
 // when calling part.MustClose.  // 打开数据文件的part
 func newPart(ph *partHeader, path string, size uint64, metaindexReader filestream.ReadCloser, timestampsFile, valuesFile, indexFile fs.MustReadAtCloser) (*part, error) {
 	var errors []error
-	metaindex, err := unmarshalMetaindexRows(nil, metaindexReader)  // 解析 metaindex.bin 文件
+	metaindex, err := unmarshalMetaindexRows(nil, metaindexReader)  // 解析 metaindex.bin 文件， metaindex数组按照tsid排序
 	if err != nil {
 		errors = append(errors, fmt.Errorf("cannot unmarshal metaindex data: %w", err))
 	}
@@ -107,7 +107,7 @@ func newPart(ph *partHeader, path string, size uint64, metaindexReader filestrea
 	p.indexFile = indexFile  // index.bin
 
 	p.metaindex = metaindex  // 按照 tsid 排序的数组
-	p.ibCache = newIndexBlockCache()
+	p.ibCache = newIndexBlockCache()  // key:偏移量 value: IndexBlock对象
 
 	if len(errors) > 0 {
 		// Return only the first error, since it has no sense in returning all errors.
@@ -151,7 +151,7 @@ type indexBlockCache struct {
 	requests uint64
 	misses   uint64
 
-	m  map[uint64]*indexBlockCacheEntry
+	m  map[uint64]*indexBlockCacheEntry  //以偏移量为key
 	mu sync.RWMutex
 
 	cleanerStopCh chan struct{}

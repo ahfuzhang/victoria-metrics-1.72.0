@@ -13,6 +13,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/VictoriaMetrics/fastcache"
+	xxhash "github.com/cespare/xxhash/v2"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/encoding"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fasttime"
@@ -22,8 +25,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/mergeset"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/uint64set"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/workingsetcache"
-	"github.com/VictoriaMetrics/fastcache"
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -204,7 +205,7 @@ func (db *indexDB) UpdateMetrics(m *IndexDBMetrics) {
 	})
 }
 
-func (db *indexDB) doExtDB(f func(extDB *indexDB)) bool {
+func (db *indexDB) doExtDB(f func(extDB *indexDB)) bool {  // 传入某个执行函数。确保线程安全的引用对象
 	db.extDBLock.Lock()
 	extDB := db.extDB
 	if extDB != nil {
@@ -214,7 +215,7 @@ func (db *indexDB) doExtDB(f func(extDB *indexDB)) bool {
 	if extDB == nil {
 		return false
 	}
-	f(extDB)
+	f(extDB)  // 使用引用计数的方法来获取对象，确保并发期间总是获得有效的对象
 	extDB.decRef()
 	return true
 }
@@ -418,7 +419,7 @@ func unmarshalTSIDs(dst []TSID, src []byte) ([]TSID, error) {
 func (db *indexDB) getTSIDByNameNoCreate(dst *TSID, metricName []byte) error {
 	is := db.getIndexSearch(0, 0, noDeadline)  // 从内存池获取 index search 对象
 	err := is.getTSIDByMetricName(dst, metricName)
-	db.putIndexSearch(is)
+	db.putIndexSearch(is)  // 放回内存池
 	if err == nil {
 		return nil
 	}
@@ -515,7 +516,7 @@ func (db *indexDB) putIndexSearch(is *indexSearch) {
 func (db *indexDB) createTSIDByName(dst *TSID, metricName []byte) error {  // 为具体的某个time series创建tsid
 	mn := GetMetricName()
 	defer PutMetricName(mn)
-	if err := mn.Unmarshal(metricName); err != nil {
+	if err := mn.Unmarshal(metricName); err != nil {  // 反序列化 time series
 		return fmt.Errorf("cannot unmarshal metricName %q: %w", metricName, err)
 	}
 
@@ -546,9 +547,9 @@ var logNewSeries = false
 
 func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) error {  // 为新的 time series创建tsid
 	// Search the TSID in the external storage.  // metricName 是未decode之前的完整数据, mn是decode后的数据
-	// This is usually the db from the previous period.
+	// This is usually the db from the previous period.  // dst 是 out 参数
 	var err error
-	if db.doExtDB(func(extDB *indexDB) {
+	if db.doExtDB(func(extDB *indexDB) {  // 这里为什么要选择4小时以前的 indexdb 呢？
 		err = extDB.getTSIDByNameNoCreate(dst, metricName)
 	}) {
 		if err == nil {
@@ -1720,7 +1721,7 @@ func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int,
 var tagFiltersKeyBufPool bytesutil.ByteBufferPool
 
 func (is *indexSearch) getTSIDByMetricName(dst *TSID, metricName []byte) error { // 根据time series的原始数据，查询tsid
-	dmis := is.db.s.getDeletedMetricIDs()
+	dmis := is.db.s.getDeletedMetricIDs()  // metricName 是序列化以后的 time series数据
 	ts := &is.ts  // table search 对象
 	kb := &is.kb  // bytes buffer 对象
 	kb.B = append(kb.B[:0], nsPrefixMetricNameToTSID)
