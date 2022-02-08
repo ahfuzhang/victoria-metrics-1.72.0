@@ -1,0 +1,88 @@
+.legendWrapper {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-gap: 20px;
+    margin-top: 20px;
+    cursor: default;
+}
+
+.legendGroup {
+    margin-bottom: 24px;
+}
+
+.legendGroupTitle {
+    display: grid;
+    grid-template-columns: 43px auto;
+    align-items: center;
+    padding: 10px;
+    font-size: 11px;
+}
+
+.legendGroupQuery {
+    grid-column: 1/3;
+    opacity: 0.6;
+}
+
+.legendGroupLine {
+    margin-right: 10px;
+}
+
+.legendItem {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    grid-gap: 6px;
+    align-items: start;
+    justify-content: start;
+    padding: 5px 10px;
+    background-color: #FFF;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.legendItemHide {
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+.legendItem:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.legendMarker {
+    width: 12px;
+    height: 12px;
+    border-width: 2px;
+    border-style: solid;
+    box-sizing: border-box;
+    transition: 0.2s ease;
+    margin: 3px 0;
+}
+
+.legendLabel {
+    font-size: 11px;
+    font-weight: normal;
+}
+
+.legendWrapperHotkey {
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+}
+
+.legendWrapperHotkey p {
+    margin-right: 20px;
+}
+
+.legendWrapperHotkey code {
+    display: inline;
+    max-width: 100%;
+    padding: 4px 6px;
+    border: 1px solid #dedede;
+    background-color: #f2f2f2;
+    border-radius: 2px;
+    font-weight: 400;
+    font-size: 10px;
+    color: #0a0a0a;
+    word-wrap: break-word;
+}

@@ -1,0 +1,34 @@
+- target_label: bar
+- source_labels: [aa]
+  separator: "foobar"
+  regex: "foo.+bar"
+  target_label: aaa
+  replacement: "xxx"
+- action: keep
+  source_labels: [aaa]
+- action: drop
+  source_labels: [aaa]
+- action: hashmod
+  source_labels: [aaa]
+  target_label: aaa
+  modulus: 234
+- action: replace_all
+  source_labels: [aa]
+  target_label: bb
+- action: labelmap_all
+  regex: "\\."
+  replacement: ":"
+- action: keep_if_equal
+  source_labels: [foo, bar]
+- action: drop_if_equal
+  source_labels: [foo, bar]
+- action: keep
+  source_labels: [__name__]
+  regex:
+  - 'fo.*o'
+  - 'bar'
+  - 'baz.+'
+- action: keep_metrics
+  regex: [foo bar baz]
+- action: drop_metrics
+  regex: "foo|bar|baz"

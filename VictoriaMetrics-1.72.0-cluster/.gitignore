@@ -1,0 +1,23 @@
+/tags
+/pkg
+*.pprof
+/bin
+.idea
+.vscode
+*.test
+*.swp
+/gocache-for-docker
+/victoria-metrics-data
+/vmagent-remotewrite-data
+/vmstorage-data
+/vmselect-cache
+.DS_Store
+
+
+### terraform
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+Gemfile.lock
+/_site
+_site

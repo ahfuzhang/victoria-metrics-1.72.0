@@ -1,0 +1,43 @@
+name: main
+on:
+  - push
+  - pull_request
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@main
+        with:
+          go-version: 1.17
+        id: go
+      - name: Code checkout
+        uses: actions/checkout@master
+      - name: Dependencies
+        run: |
+          make install-golint
+          make install-errcheck
+          make install-golangci-lint
+      - name: Build
+        env:
+          GO111MODULE: on
+        run: |
+            export PATH=$PATH:$(go env GOPATH)/bin # temporary fix. See https://github.com/actions/setup-go/issues/14
+            make check-all
+            git diff --exit-code
+            make test-full
+            make test-pure
+            make test-full-386
+            make vminsert vmselect vmstorage
+            make vminsert-pure vmselect-pure vmstorage-pure
+            make vmutils
+            GOOS=freebsd go build -mod=vendor ./app/vminsert
+            GOOS=freebsd go build -mod=vendor ./app/vmselect
+            GOOS=freebsd go build -mod=vendor ./app/vmstorage
+            GOOS=openbsd go build -mod=vendor ./app/vminsert
+            GOOS=openbsd go build -mod=vendor ./app/vmselect
+            GOOS=openbsd go build -mod=vendor ./app/vmstorage
+            GOOS=darwin go build -mod=vendor ./app/vminsert
+            GOOS=darwin go build -mod=vendor ./app/vmselect
+            GOOS=darwin go build -mod=vendor ./app/vmstorage

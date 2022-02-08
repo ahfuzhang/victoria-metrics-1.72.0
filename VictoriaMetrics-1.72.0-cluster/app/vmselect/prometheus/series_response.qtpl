@@ -1,0 +1,25 @@
+{% import (
+	"github.com/valyala/quicktemplate"
+) %}
+
+{% stripspace %}
+SeriesResponse generates response for /api/v1/series.
+See https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers
+{% func SeriesResponse(isPartial bool, resultsCh <-chan *quicktemplate.ByteBuffer) %}
+{
+	"status":"success",
+	"isPartial":{% if isPartial %}true{% else %}false{% endif %},
+	"data":[
+		{% code bb, ok := <-resultsCh %}
+		{% if ok %}
+			{%z= bb.B %}
+			{% code quicktemplate.ReleaseByteBuffer(bb) %}
+			{% for bb := range resultsCh %}
+				,{%z= bb.B %}
+				{% code quicktemplate.ReleaseByteBuffer(bb) %}
+			{% endfor %}
+		{% endif %}
+	]
+}
+{% endfunc %}
+{% endstripspace %}
