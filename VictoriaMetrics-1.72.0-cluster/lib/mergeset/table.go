@@ -79,7 +79,7 @@ func maxItemsPerCachedPart() uint64 {
 // so they become visible to search.
 const rawItemsFlushInterval = time.Second
 
-// Table represents mergeset table.
+// Table represents mergeset table.  // 索引部分的table对象
 type Table struct {
 	// Atomically updated counters must go first in the struct, so they are properly
 	// aligned to 8 bytes on 32-bit architectures.
@@ -90,9 +90,9 @@ type Table struct {
 	itemsMerged    uint64
 	assistedMerges uint64
 
-	mergeIdx uint64
+	mergeIdx uint64  // 好像是大数组的插入位置
 
-	path string
+	path string  // 文件路径
 
 	flushCallback         func()
 	flushCallbackWorkerWG sync.WaitGroup

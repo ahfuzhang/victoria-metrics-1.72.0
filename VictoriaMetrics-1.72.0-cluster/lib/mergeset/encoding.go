@@ -58,10 +58,10 @@ func (ib *inmemoryBlock) Swap(i, j int) {
 	items[i], items[j] = items[j], items[i]
 }
 
-type inmemoryBlock struct {
-	commonPrefix []byte
-	data         []byte
-	items        []Item
+type inmemoryBlock struct {  // 内存中的block是个重要的结构
+	commonPrefix []byte   // 前缀的内容，猜测是为了加速前缀匹配
+	data         []byte   // 把所有time sereies序列化后的内存顺序存放
+	items        []Item   //  记录每个time series在上述大数组中的偏移量
 }
 
 func (ib *inmemoryBlock) SizeBytes() int {
