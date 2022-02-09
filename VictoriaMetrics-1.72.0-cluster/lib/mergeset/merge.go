@@ -26,13 +26,13 @@ type PrepareBlockCallback func(data []byte, items []Item) ([]byte, []Item)
 //
 // The function immediately returns when stopCh is closed.
 //
-// It also atomically adds the number of items merged to itemsMerged.
+// It also atomically adds the number of items merged to itemsMerged.  // 合并15个 inmemoryPart
 func mergeBlockStreams(ph *partHeader, bsw *blockStreamWriter, bsrs []*blockStreamReader, prepareBlock PrepareBlockCallback, stopCh <-chan struct{},
 	itemsMerged *uint64) error {
 	bsm := bsmPool.Get().(*blockStreamMerger)
-	if err := bsm.Init(bsrs, prepareBlock); err != nil {
+	if err := bsm.Init(bsrs, prepareBlock); err != nil {  // 把 压缩好的数据又解压缩了，方便读取。（蛋疼啊！一开始就不要压缩就好了）
 		return fmt.Errorf("cannot initialize blockStreamMerger: %w", err)
-	}
+	}  // 把数据放到了 bsrHeap 字段
 	err := bsm.Merge(bsw, ph, stopCh, itemsMerged)
 	bsm.reset()
 	bsmPool.Put(bsm)
@@ -50,9 +50,9 @@ var bsmPool = &sync.Pool{
 }
 
 type blockStreamMerger struct {
-	prepareBlock PrepareBlockCallback
+	prepareBlock PrepareBlockCallback  // 初始化 storage 对象时候提供的回调函数
 
-	bsrHeap bsrHeap
+	bsrHeap bsrHeap  // 这个是一个堆的数据结构
 
 	// ib is a scratch block with pending items.
 	ib inmemoryBlock
@@ -77,19 +77,19 @@ func (bsm *blockStreamMerger) reset() {
 	bsm.phFirstItemCaught = false
 }
 
-func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock PrepareBlockCallback) error {
-	bsm.reset()
+func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock PrepareBlockCallback) error {  // 初始化用于合并的对象
+	bsm.reset()   //  bsrs []*blockStreamReader 是数据源，一般是15个元素
 	bsm.prepareBlock = prepareBlock
-	for _, bsr := range bsrs {
-		if bsr.Next() {
-			bsm.bsrHeap = append(bsm.bsrHeap, bsr)
+	for _, bsr := range bsrs {  // 遍历每个 blockStreamReader 对象
+		if bsr.Next() {  // 第一次调用Next()方法其实是准备好数据，方便像游标一样读取它们
+			bsm.bsrHeap = append(bsm.bsrHeap, bsr)  // 加入堆中
 		}
 
 		if err := bsr.Error(); err != nil {
 			return fmt.Errorf("cannot obtain the next block from blockStreamReader %q: %w", bsr.path, err)
 		}
 	}
-	heap.Init(&bsm.bsrHeap)
+	heap.Init(&bsm.bsrHeap)  // 调整堆  ??? 调整堆和sort()有什么差别？
 
 	if len(bsm.bsrHeap) == 0 {
 		return fmt.Errorf("bsrHeap cannot be empty")
@@ -100,8 +100,8 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock Prepa
 
 var errForciblyStopped = fmt.Errorf("forcibly stopped")
 
-func (bsm *blockStreamMerger) Merge(bsw *blockStreamWriter, ph *partHeader, stopCh <-chan struct{}, itemsMerged *uint64) error {
-again:
+func (bsm *blockStreamMerger) Merge(bsw *blockStreamWriter, ph *partHeader, stopCh <-chan struct{}, itemsMerged *uint64) error {  // 合并15个 inmemoryPart
+again:  // todo: 丑陋的代码
 	if len(bsm.bsrHeap) == 0 {
 		// Write the last (maybe incomplete) inmemoryBlock to bsw.
 		bsm.flushIB(bsw, ph, itemsMerged)
@@ -109,12 +109,12 @@ again:
 	}
 
 	select {
-	case <-stopCh:
+	case <-stopCh:  // 这里证明了从 nil 的 channel 中出队，不会报错
 		return errForciblyStopped
 	default:
 	}
 
-	bsr := heap.Pop(&bsm.bsrHeap).(*blockStreamReader)
+	bsr := heap.Pop(&bsm.bsrHeap).(*blockStreamReader)  // 从堆中弹出一个元素
 
 	var nextItem []byte
 	hasNextItem := false
@@ -126,7 +126,7 @@ again:
 	data := bsr.Block.data
 	for bsr.blockItemIdx < len(bsr.Block.items) {
 		item := items[bsr.blockItemIdx].Bytes(data)
-		if hasNextItem && string(item) > string(nextItem) {
+		if hasNextItem && string(item) > string(nextItem) {  // todo: 优化string()
 			break
 		}
 		if !bsm.ib.Add(item) {
@@ -156,7 +156,7 @@ again:
 }
 
 func (bsm *blockStreamMerger) flushIB(bsw *blockStreamWriter, ph *partHeader, itemsMerged *uint64) {
-	items := bsm.ib.items
+	items := bsm.ib.items  // inmemoryBlock 中的数据
 	data := bsm.ib.data
 	if len(items) == 0 {
 		// Nothing to flush.
@@ -166,7 +166,7 @@ func (bsm *blockStreamMerger) flushIB(bsw *blockStreamWriter, ph *partHeader, it
 	if bsm.prepareBlock != nil {
 		bsm.firstItem = append(bsm.firstItem[:0], items[0].String(data)...)
 		bsm.lastItem = append(bsm.lastItem[:0], items[len(items)-1].String(data)...)
-		data, items = bsm.prepareBlock(data, items)
+		data, items = bsm.prepareBlock(data, items)  // 调用回调函数
 		bsm.ib.data = data
 		bsm.ib.items = items
 		if len(items) == 0 {
@@ -212,10 +212,10 @@ func (bh *bsrHeap) Swap(i, j int) {
 
 func (bh *bsrHeap) Less(i, j int) bool {
 	x := *bh
-	return string(x[i].bh.firstItem) < string(x[j].bh.firstItem)
+	return string(x[i].bh.firstItem) < string(x[j].bh.firstItem)  //todo: 优化string()
 }
 
-func (bh *bsrHeap) Pop() interface{} {
+func (bh *bsrHeap) Pop() interface{} {  // 去掉最后一个元素
 	a := *bh
 	v := a[len(a)-1]
 	*bh = a[:len(a)-1]

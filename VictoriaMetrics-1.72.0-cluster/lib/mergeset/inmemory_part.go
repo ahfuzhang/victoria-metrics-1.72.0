@@ -10,20 +10,20 @@ import (
 
 type inmemoryPart struct {  //数据会先写入 inmemoryPart
 	ph partHeader
-	sb storageBlock
-	bh blockHeader
-	mr metaindexRow
+	sb storageBlock   // 所有的time series的数据，保存在这里
+	bh blockHeader  //仅仅保存头的信息
+	mr metaindexRow  // 元数据信息
 
-	unpackedIndexBlockBuf []byte
-	packedIndexBlockBuf   []byte
+	unpackedIndexBlockBuf []byte  // 保存上方的block header序列化后的数据
+	packedIndexBlockBuf   []byte  // 把 unpackedIndexBlockBuf 做 ZSTD压缩。
 
-	unpackedMetaindexBuf []byte
-	packedMetaindexBuf   []byte
+	unpackedMetaindexBuf []byte  // 把metaindexRow序列化后，存在这里
+	packedMetaindexBuf   []byte  // 把 unpackedMetaindexBuf 进行ZSTD压缩后，存在这里
 
-	metaindexData bytesutil.ByteBuffer
-	indexData     bytesutil.ByteBuffer
-	itemsData     bytesutil.ByteBuffer
-	lensData      bytesutil.ByteBuffer
+	metaindexData bytesutil.ByteBuffer  // 把 metaindexRow 序列化后的数据存这里，猜测是对应着 metaindex.bin
+	indexData     bytesutil.ByteBuffer  // 猜测是对应着 index.bin文件
+	itemsData     bytesutil.ByteBuffer  // 数据来自 storageBlock.itemsData
+	lensData      bytesutil.ByteBuffer  // 数据来自 storageBlock.lensData
 }
 
 func (mp *inmemoryPart) Reset() {
@@ -45,7 +45,7 @@ func (mp *inmemoryPart) Reset() {
 }
 
 // Init initializes mp from ib.
-func (mp *inmemoryPart) Init(ib *inmemoryBlock) {
+func (mp *inmemoryPart) Init(ib *inmemoryBlock) {  // 把 inmemoryBlock 转换为 inmemoryPart
 	mp.Reset()
 
 	// Use the minimum possible compressLevel for compressing inmemoryPart,
@@ -58,9 +58,9 @@ func (mp *inmemoryPart) Init(ib *inmemoryBlock) {
 	mp.ph.firstItem = append(mp.ph.firstItem[:0], ib.items[0].String(ib.data)...)
 	mp.ph.lastItem = append(mp.ph.lastItem[:0], ib.items[len(ib.items)-1].String(ib.data)...)
 
-	fs.MustWriteData(&mp.itemsData, mp.sb.itemsData)
+	fs.MustWriteData(&mp.itemsData, mp.sb.itemsData)  // ??? 不太明白，为什么这里要拷贝一次数据
 	mp.bh.itemsBlockOffset = 0
-	mp.bh.itemsBlockSize = uint32(len(mp.sb.itemsData))
+	mp.bh.itemsBlockSize = uint32(len(mp.sb.itemsData))  // todo: 内存拷贝值得优化
 
 	fs.MustWriteData(&mp.lensData, mp.sb.lensData)
 	mp.bh.lensBlockOffset = 0
@@ -68,7 +68,7 @@ func (mp *inmemoryPart) Init(ib *inmemoryBlock) {
 
 	mp.unpackedIndexBlockBuf = mp.bh.Marshal(mp.unpackedIndexBlockBuf[:0])
 	mp.packedIndexBlockBuf = encoding.CompressZSTDLevel(mp.packedIndexBlockBuf[:0], mp.unpackedIndexBlockBuf, 0)
-	fs.MustWriteData(&mp.indexData, mp.packedIndexBlockBuf)
+	fs.MustWriteData(&mp.indexData, mp.packedIndexBlockBuf)  // 把 blockHeader 压缩后，写入indexData
 
 	mp.mr.firstItem = append(mp.mr.firstItem[:0], mp.bh.firstItem...)
 	mp.mr.blockHeadersCount = 1
@@ -76,7 +76,7 @@ func (mp *inmemoryPart) Init(ib *inmemoryBlock) {
 	mp.mr.indexBlockSize = uint32(len(mp.packedIndexBlockBuf))
 	mp.unpackedMetaindexBuf = mp.mr.Marshal(mp.unpackedMetaindexBuf[:0])
 	mp.packedMetaindexBuf = encoding.CompressZSTDLevel(mp.packedMetaindexBuf[:0], mp.unpackedMetaindexBuf, 0)
-	fs.MustWriteData(&mp.metaindexData, mp.packedMetaindexBuf)
+	fs.MustWriteData(&mp.metaindexData, mp.packedMetaindexBuf)  // 把 metaindexRow 写入
 }
 
 // It is safe calling NewPart multiple times.

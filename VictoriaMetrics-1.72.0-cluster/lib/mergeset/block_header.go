@@ -11,16 +11,16 @@ import (
 
 type blockHeader struct {
 	// common prefix for all the items in the block.
-	commonPrefix []byte
+	commonPrefix []byte  // block内的所有time series的最大公共前缀
 
 	// The first item.
-	firstItem []byte
+	firstItem []byte  // 第一个time series
 
 	// Marshal type used for block compression.
-	marshalType marshalType
+	marshalType marshalType  //是否使用ZSTD压缩。很小的块是不压缩的
 
 	// The number of items in the block, excluding the first item.
-	itemsCount uint32  // 猜测是指存在多少个 time series
+	itemsCount uint32  // 存在多少个 time series
 
 	// The offset of the items block.
 	itemsBlockOffset uint64  // 在 items.bin 中的偏移量

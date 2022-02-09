@@ -94,11 +94,11 @@ type Table struct {
 
 	path string  // 文件路径
 
-	flushCallback         func()
+	flushCallback         func()  // 调用层传入的回调函数
 	flushCallbackWorkerWG sync.WaitGroup
 	needFlushCallbackCall uint32
 
-	prepareBlock PrepareBlockCallback
+	prepareBlock PrepareBlockCallback  // 调用层传入的回调函数
 
 	partsLock sync.Mutex  //专门针对parts数组的锁
 	parts     []*partWrapper  // table对象所属的所有 part 的数组。使用引用计数
@@ -106,7 +106,7 @@ type Table struct {
 	// rawItems contains recently added items that haven't been converted to parts yet.
 	//
 	// rawItems aren't used in search for performance reasons
-	rawItems rawItemsShards
+	rawItems rawItemsShards  // 这个是干啥的？
 
 	snapshotLock sync.RWMutex
 
@@ -125,11 +125,11 @@ type Table struct {
 	rawItemsPendingFlushesWG syncwg.WaitGroup
 }
 
-type rawItemsShards struct {
+type rawItemsShards struct {  // 还未保存到part的数据
 	shardIdx uint32
 
 	// shards reduce lock contention when adding rows on multi-CPU systems.
-	shards []rawItemsShard
+	shards []rawItemsShard  // 数组长度与CPU核数一致
 }
 
 // The number of shards for rawItems per table.
@@ -144,7 +144,7 @@ func (riss *rawItemsShards) init() {
 }
 
 func (riss *rawItemsShards) addItems(tb *Table, items [][]byte) error {
-	n := atomic.AddUint32(&riss.shardIdx, 1)
+	n := atomic.AddUint32(&riss.shardIdx, 1)  // 通过原子加来分散到不同的对象，避免锁的冲突
 	shards := riss.shards
 	idx := n % uint32(len(shards))
 	shard := &shards[idx]
@@ -159,9 +159,9 @@ func (riss *rawItemsShards) Len() int {
 	return n
 }
 
-type rawItemsShard struct {
+type rawItemsShard struct {  // 还未写到part的数据
 	mu            sync.Mutex
-	ibs           []*inmemoryBlock
+	ibs           []*inmemoryBlock  // 存在多个 inmemoryBlock对象
 	lastFlushTime uint64
 }
 
@@ -175,21 +175,21 @@ func (ris *rawItemsShard) Len() int {
 	return n
 }
 
-func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {
+func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {  // 未保存在part中的数据，先写入这里
 	var err error
 	var blocksToFlush []*inmemoryBlock
 
-	ris.mu.Lock()
-	ibs := ris.ibs
+	ris.mu.Lock()  // 加锁避免并发的影响
+	ibs := ris.ibs  // inmemoryBlock 的数组
 	if len(ibs) == 0 {
-		ib := getInmemoryBlock()
+		ib := getInmemoryBlock()  // 从内存池获取一个对象
 		ibs = append(ibs, ib)
 		ris.ibs = ibs
 	}
-	ib := ibs[len(ibs)-1]
+	ib := ibs[len(ibs)-1]  // 取最后一个对象
 	for _, item := range items {
-		if !ib.Add(item) {
-			ib = getInmemoryBlock()
+		if !ib.Add(item) {  // 调用 inmemoryBlock对象的add方法，其实就是追加到一个大的[]byte中去，通过Item记录位置
+			ib = getInmemoryBlock()  // 添加失败说明内存已经满了，需要再申请一块
 			if !ib.Add(item) {
 				putInmemoryBlock(ib)
 				err = fmt.Errorf("cannot insert an item %q into an empty inmemoryBlock; it looks like the item is too large? len(item)=%d", item, len(item))
@@ -199,7 +199,7 @@ func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {
 			ris.ibs = ibs
 		}
 	}
-	if len(ibs) >= maxBlocksPerShard {
+	if len(ibs) >= maxBlocksPerShard {  // 最多512个 inmemoryBlock， 超过这个数量就调用merge方法
 		blocksToFlush = append(blocksToFlush, ibs...)
 		for i := range ibs {
 			ibs[i] = nil
@@ -209,7 +209,7 @@ func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {
 	}
 	ris.mu.Unlock()
 
-	tb.mergeRawItemsBlocks(blocksToFlush, false)
+	tb.mergeRawItemsBlocks(blocksToFlush, false)  //对512个inmemoryBlock进行merge操作
 	return err
 }
 
@@ -642,14 +642,14 @@ func (ris *rawItemsShard) appendBlocksToFlush(dst []*inmemoryBlock, tb *Table, i
 	return dst
 }
 
-func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {
+func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {  //对512个inmemoryBlock进行merge操作
 	if len(ibs) == 0 {
 		return
 	}
 	tb.partMergersWG.Add(1)
 	defer tb.partMergersWG.Done()
-
-	pws := make([]*partWrapper, 0, (len(ibs)+defaultPartsToMerge-1)/defaultPartsToMerge)
+       // 每15个inmemoryBlock 放到一个 part ?
+	pws := make([]*partWrapper, 0, (len(ibs)+defaultPartsToMerge-1)/defaultPartsToMerge)  // 数组长度为512的时候，pwd数组长度为35
 	var pwsLock sync.Mutex
 	var wg sync.WaitGroup
 	for len(ibs) > 0 {
@@ -658,22 +658,22 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {
 			n = len(ibs)
 		}
 		wg.Add(1)
-		go func(ibsPart []*inmemoryBlock) {
+		go func(ibsPart []*inmemoryBlock) {  // 启动了35个协程来做合并
 			defer wg.Done()
-			pw := tb.mergeInmemoryBlocks(ibsPart)
+			pw := tb.mergeInmemoryBlocks(ibsPart)  //合并15个 inmemoryBlock
 			if pw == nil {
-				return
+				return  //合并失败就这么算了吗？会丢数据的吧
 			}
 			pw.isInMerge = true
 			pwsLock.Lock()
-			pws = append(pws, pw)
+			pws = append(pws, pw)  //合并成功后，返回 part 对象
 			pwsLock.Unlock()
 		}(ibs[:n])
 		ibs = ibs[n:]
 	}
-	wg.Wait()
+	wg.Wait()  // 这里是阻塞的。也就是说，合并必然影响插入性能
 	if len(pws) > 0 {
-		if err := tb.mergeParts(pws, nil, true); err != nil {
+		if err := tb.mergeParts(pws, nil, true); err != nil {  // 然后再把 part 对象 merge 到 table 上去
 			logger.Panicf("FATAL: cannot merge raw parts: %s", err)
 		}
 		if tb.flushCallback != nil {
@@ -687,7 +687,7 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {
 
 	for {
 		tb.partsLock.Lock()
-		ok := len(tb.parts) <= maxParts
+		ok := len(tb.parts) <= maxParts  // 一个 table 下面最多 512 个part 吗？
 		tb.partsLock.Unlock()
 		if ok {
 			return
@@ -696,7 +696,7 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {
 		// The added part exceeds maxParts count. Assist with merging other parts.
 		//
 		// Prioritize assisted merges over searches.
-		storagepacelimiter.Search.Inc()
+		storagepacelimiter.Search.Inc()  //合并part的时候，告诉查询协程要等待
 		err := tb.mergeExistingParts(false)
 		storagepacelimiter.Search.Dec()
 		if err == nil {
@@ -710,7 +710,7 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {
 	}
 }
 
-func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {
+func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {  //合并15个 inmemoryBlock
 	// Convert ibs into inmemoryPart's
 	mps := make([]*inmemoryPart, 0, len(ibs))
 	for _, ib := range ibs {
@@ -718,8 +718,8 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {
 			continue
 		}
 		mp := getInmemoryPart()
-		mp.Init(ib)
-		putInmemoryBlock(ib)
+		mp.Init(ib)  // 把 inmemoryBlock 转换为 inmemoryPart， 数据会进行ZSTD压缩
+		putInmemoryBlock(ib)  //放回内存池
 		mps = append(mps, mp)
 	}
 	if len(mps) == 0 {
@@ -728,7 +728,7 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {
 	if len(mps) == 1 {
 		// Nothing to merge. Just return a single inmemory part.
 		mp := mps[0]
-		p := mp.NewPart()
+		p := mp.NewPart()  // 把 inmemoryPart 转换为part对象
 		return &partWrapper{
 			p:        p,
 			mp:       mp,
@@ -749,8 +749,8 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {
 	// Prepare blockStreamReaders for source parts.
 	bsrs := make([]*blockStreamReader, 0, len(mps))
 	for _, mp := range mps {
-		bsr := getBlockStreamReader()
-		bsr.InitFromInmemoryPart(mp)
+		bsr := getBlockStreamReader()  // 从内存池获取对象
+		bsr.InitFromInmemoryPart(mp)  // 复制了一些成员给 BlockStreamReader 对象
 		bsrs = append(bsrs, bsr)
 	}
 
@@ -762,7 +762,7 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {
 	// Merge parts.
 	// The merge shouldn't be interrupted by stopCh,
 	// since it may be final after stopCh is closed.
-	err := mergeBlockStreams(&mpDst.ph, bsw, bsrs, tb.prepareBlock, nil, &tb.itemsMerged)
+	err := mergeBlockStreams(&mpDst.ph, bsw, bsrs, tb.prepareBlock, nil, &tb.itemsMerged)  //合并15个 inmemoryPart
 	if err != nil {
 		logger.Panicf("FATAL: cannot merge inmemoryBlocks: %s", err)
 	}

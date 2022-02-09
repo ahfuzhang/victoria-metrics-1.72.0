@@ -59,7 +59,7 @@ func (ib *inmemoryBlock) Swap(i, j int) {
 }
 
 type inmemoryBlock struct {  // 内存中的block是个重要的结构
-	commonPrefix []byte   // 猜测是所有time series公共的前缀，也就是 __name__ 字段。需要进一步证实 ???
+	commonPrefix []byte   // block中所有time series的最大公共头
 	data         []byte   // 把所有time sereies序列化后的内存顺序存放。这里的数据很可能来自 items.bin
 	items        []Item   //  记录每个time series在上述大数组中的偏移量。这里的数据很可能来自 lens.bin
 }
@@ -74,19 +74,19 @@ func (ib *inmemoryBlock) Reset() {
 	ib.items = ib.items[:0]
 }
 
-func (ib *inmemoryBlock) updateCommonPrefix() {
+func (ib *inmemoryBlock) updateCommonPrefix() {  // 找出block中所有time series的最大公共头
 	ib.commonPrefix = ib.commonPrefix[:0]
 	if len(ib.items) == 0 {
 		return
 	}
-	items := ib.items
+	items := ib.items  //成员为什么要拷贝一次，没看懂？
 	data := ib.data
-	cp := items[0].Bytes(data)
+	cp := items[0].Bytes(data)  // cp是第0个time series的原始数据
 	if len(cp) == 0 {
 		return
 	}
 	for _, it := range items[1:] {
-		cpLen := commonPrefixLen(cp, it.Bytes(data))
+		cpLen := commonPrefixLen(cp, it.Bytes(data))  // 找两个time series的最大公共头
 		if cpLen == 0 {
 			return
 		}
@@ -95,7 +95,7 @@ func (ib *inmemoryBlock) updateCommonPrefix() {
 	ib.commonPrefix = append(ib.commonPrefix[:0], cp...)
 }
 
-func commonPrefixLen(a, b []byte) int {
+func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数据。找到两个time series的最大的公共头。这个方法有点蠢……
 	i := 0
 	if len(a) > len(b) {
 		for i < len(b) && a[i] == b[i] {
@@ -112,7 +112,7 @@ func commonPrefixLen(a, b []byte) int {
 // Add adds x to the end of ib.
 //
 // false is returned if x isn't added to ib due to block size contraints.
-func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据
+func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据，前后各加了1字节
 	data := ib.data  // 没看懂这个写法？ 是为了避免并发带来影响？还是为了编译期优化代码？
 	if len(x)+len(data) > maxInmemoryBlockSize {
 		return false
@@ -122,7 +122,7 @@ func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time
 		data = bytesutil.Resize(data, maxInmemoryBlockSize)[:dataLen]
 	}
 	dataLen := len(data)
-	data = append(data, x...)  // 在大数组中追加
+	data = append(data, x...)  // 在大数组中追加, add的过程是无需的。在合并的时候，会进行排序
 	ib.items = append(ib.items, Item{  // 用 items 数组说明time series在大数组中的位置
 		Start: uint32(dataLen),
 		End:   uint32(len(data)),
@@ -185,18 +185,18 @@ func (ib *inmemoryBlock) isSorted() bool {
 	return sort.IsSorted(ib)
 }
 
-// MarshalUnsortedData marshals unsorted items from ib to sb.
+// MarshalUnsortedData marshals unsorted items from ib to sb.  // sb storageBlock
 //
 // It also:
 // - appends first item to firstItemDst and returns the result.
 // - appends common prefix for all the items to commonPrefixDst and returns the result.
 // - returns the number of items encoded including the first item.
-// - returns the marshal type used for the encoding.
+// - returns the marshal type used for the encoding.  // 序列化数据，并进行zstd压缩
 func (ib *inmemoryBlock) MarshalUnsortedData(sb *storageBlock, firstItemDst, commonPrefixDst []byte, compressLevel int) ([]byte, []byte, uint32, marshalType) {
 	if !ib.isSorted() {
 		ib.sort()
 	}
-	ib.updateCommonPrefix()
+	ib.updateCommonPrefix()  // 寻找最大公共前缀
 	return ib.marshalData(sb, firstItemDst, commonPrefixDst, compressLevel)
 }
 
@@ -236,7 +236,7 @@ func (ib *inmemoryBlock) debugItemsString() string {
 
 // Preconditions:
 // - ib.items must be sorted.
-// - updateCommonPrefix must be called.
+// - updateCommonPrefix must be called.  // 序列化数据的函数
 func (ib *inmemoryBlock) marshalData(sb *storageBlock, firstItemDst, commonPrefixDst []byte, compressLevel int) ([]byte, []byte, uint32, marshalType) {
 	if len(ib.items) <= 0 {
 		logger.Panicf("BUG: inmemoryBlock.marshalData must be called on non-empty blocks only")
@@ -247,8 +247,8 @@ func (ib *inmemoryBlock) marshalData(sb *storageBlock, firstItemDst, commonPrefi
 
 	data := ib.data
 	firstItem := ib.items[0].Bytes(data)
-	firstItemDst = append(firstItemDst, firstItem...)
-	commonPrefixDst = append(commonPrefixDst, ib.commonPrefix...)
+	firstItemDst = append(firstItemDst, firstItem...)  // 第一个time series
+	commonPrefixDst = append(commonPrefixDst, ib.commonPrefix...)  // 最大公共前缀
 
 	if len(ib.data)-len(ib.commonPrefix)*len(ib.items) < 64 || len(ib.items) < 2 {
 		// Use plain encoding form small block, since it is cheaper.
@@ -312,7 +312,7 @@ func (ib *inmemoryBlock) marshalData(sb *storageBlock, firstItemDst, commonPrefi
 }
 
 // UnmarshalData decodes itemsCount items from sb and firstItem and stores
-// them to ib.
+// them to ib.  // 从 storageBlock 中还原出 inmemoryBlock 的数据
 func (ib *inmemoryBlock) UnmarshalData(sb *storageBlock, firstItem, commonPrefix []byte, itemsCount uint32, mt marshalType) error {
 	ib.Reset()  // 把 inmemoryBlock 清空
 

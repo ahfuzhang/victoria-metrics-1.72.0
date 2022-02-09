@@ -478,7 +478,7 @@ func (is *indexSearch) GetOrCreateTSIDByName(dst *TSID, metricName []byte) error
 	// TSID for the given name wasn't found. Create it.
 	// It is OK if duplicate TSID for mn is created by concurrent goroutines.
 	// Metric results will be merged by mn after TableSearch.
-	if err := is.db.createTSIDByName(dst, metricName); err != nil {
+	if err := is.db.createTSIDByName(dst, metricName); err != nil {  // 完全新的time series，要创建，并生成tsid
 		return fmt.Errorf("cannot create TSID by MetricName %q: %w", metricName, err)
 	}
 	return nil

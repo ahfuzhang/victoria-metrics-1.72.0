@@ -27,26 +27,26 @@ type blockStreamReader struct {
 	// All the metaindexRows.
 	// The blockStreamReader doesn't own mrs - it must be alive
 	// during the read.
-	mrs []metaindexRow
+	mrs []metaindexRow  // 通过 inmemoryPart初始化的时候，这个数组的长度至少是1
 
 	// The index for the currently processed metaindexRow from mrs.
-	mrIdx int
+	mrIdx int  // 指向 []metaindexRow 数组的下标
 
 	// Currently processed blockHeaders.
-	bhs []blockHeader
+	bhs []blockHeader  // 根据当前的 metaindexRow，分配需要的N个 blockHeader
 
 	// The index of the currently processed blockHeader.
-	bhIdx int
+	bhIdx int  // blockHeader数组的游标
 
 	indexReader filestream.ReadCloser
 	itemsReader filestream.ReadCloser
 	lensReader  filestream.ReadCloser
 
 	// Contains the current blockHeader.
-	bh *blockHeader
+	bh *blockHeader  // 当前的 blockHeader
 
 	// Contains the current storageBlock.
-	sb storageBlock
+	sb storageBlock  // 读取 items.bin 和 lens.bin
 
 	// The number of items read so far.
 	itemsRead uint64
@@ -57,8 +57,8 @@ type blockStreamReader struct {
 	// Whether the first item in the reader checked with ph.firstItem.
 	firstItemChecked bool
 
-	packedBuf   []byte
-	unpackedBuf []byte
+	packedBuf   []byte  // 临时保存 从 index.bin 中读出的数据
+	unpackedBuf []byte  // 对 packedBuf 的数据进行 ZSTD 解压缩，保存解压缩的结果
 
 	// The last error.
 	err error
@@ -98,12 +98,12 @@ func (bsr *blockStreamReader) String() string {
 	return bsr.ph.String()
 }
 
-// InitFromInmemoryPart initializes bsr from the given ip.
-func (bsr *blockStreamReader) InitFromInmemoryPart(ip *inmemoryPart) {
+// InitFromInmemoryPart initializes bsr from the given ip.  // todo: 我认为应该要增加 InitFromInmemoryBlock() 方法，减少重复的步骤
+func (bsr *blockStreamReader) InitFromInmemoryPart(ip *inmemoryPart) {  // 使用 inmemoryPart 来初始化blockStreamReader对象
 	bsr.reset()
 
 	var err error
-	bsr.mrs, err = unmarshalMetaindexRows(bsr.mrs[:0], ip.metaindexData.NewReader())
+	bsr.mrs, err = unmarshalMetaindexRows(bsr.mrs[:0], ip.metaindexData.NewReader())  // 得到 metaindexRow 对象
 	if err != nil {
 		logger.Panicf("BUG: cannot unmarshal metaindex rows from inmemory part: %s", err)
 	}
@@ -185,19 +185,19 @@ func (bsr *blockStreamReader) MustClose() {
 	bsr.reset()
 }
 
-func (bsr *blockStreamReader) Next() bool {
+func (bsr *blockStreamReader) Next() bool {  // 把压缩的数据还原到内存，像游标一样逐块读取数据
 	if bsr.err != nil {
 		return false
 	}
 
-	if bsr.bhIdx >= len(bsr.bhs) {
+	if bsr.bhIdx >= len(bsr.bhs) {  // 一开始 bsr.bhIdx =0, len(bsr.bhs)=0。 这个判断说明当前游标的 blockHeader 还未解析，于是进入解析
 		// The current index block is over. Try reading the next index block.
-		if err := bsr.readNextBHS(); err != nil {
+		if err := bsr.readNextBHS(); err != nil {  // 读出 blockHeader数组, 内容来自类似 index.bin
 			if err == io.EOF {
 				// Check the last item.
 				b := &bsr.Block
 				lastItem := b.items[len(b.items)-1].Bytes(b.data)
-				if string(bsr.ph.lastItem) != string(lastItem) {
+				if string(bsr.ph.lastItem) != string(lastItem) {  // todo: 优化string()
 					err = fmt.Errorf("unexpected last item; got %X; want %X", lastItem, bsr.ph.lastItem)
 				}
 			} else {
@@ -208,10 +208,10 @@ func (bsr *blockStreamReader) Next() bool {
 		}
 	}
 
-	bsr.bh = &bsr.bhs[bsr.bhIdx]
-	bsr.bhIdx++
+	bsr.bh = &bsr.bhs[bsr.bhIdx]  // 指向当前的blockHeader
+	bsr.bhIdx++  // blockHeader的游标前移
 
-	bsr.sb.itemsData = bytesutil.Resize(bsr.sb.itemsData, int(bsr.bh.itemsBlockSize))
+	bsr.sb.itemsData = bytesutil.Resize(bsr.sb.itemsData, int(bsr.bh.itemsBlockSize))  // todo: 当从 inmemoryBlock合并的时候，这里很浪费
 	if err := fs.ReadFullData(bsr.itemsReader, bsr.sb.itemsData); err != nil {
 		bsr.err = fmt.Errorf("cannot read compressed items block with size %d: %w", bsr.bh.itemsBlockSize, err)
 		return false
@@ -222,7 +222,7 @@ func (bsr *blockStreamReader) Next() bool {
 		bsr.err = fmt.Errorf("cannot read compressed lens block with size %d: %w", bsr.bh.lensBlockSize, err)
 		return false
 	}
-
+		//  bsr.Block.UnmarshalData() 很浪费
 	if err := bsr.Block.UnmarshalData(&bsr.sb, bsr.bh.firstItem, bsr.bh.commonPrefix, bsr.bh.itemsCount, bsr.bh.marshalType); err != nil {
 		bsr.err = fmt.Errorf("cannot unmarshal inmemoryBlock from storageBlock with firstItem=%X, commonPrefix=%X, itemsCount=%d, marshalType=%d: %w",
 			bsr.bh.firstItem, bsr.bh.commonPrefix, bsr.bh.itemsCount, bsr.bh.marshalType, err)
@@ -243,7 +243,7 @@ func (bsr *blockStreamReader) Next() bool {
 		bsr.firstItemChecked = true
 		b := &bsr.Block
 		firstItem := b.items[0].Bytes(b.data)
-		if string(bsr.ph.firstItem) != string(firstItem) {
+		if string(bsr.ph.firstItem) != string(firstItem) {  //todo: string()值得优化
 			bsr.err = fmt.Errorf("unexpected first item; got %X; want %X", firstItem, bsr.ph.firstItem)
 			return false
 		}
@@ -251,13 +251,13 @@ func (bsr *blockStreamReader) Next() bool {
 	return true
 }
 
-func (bsr *blockStreamReader) readNextBHS() error {
-	if bsr.mrIdx >= len(bsr.mrs) {
+func (bsr *blockStreamReader) readNextBHS() error {  // 从index.bin中读出对应的 blockHeader 数组
+	if bsr.mrIdx >= len(bsr.mrs) {  // 读每个 metaindexRow，指针走到了数据的最后，表示读完了
 		return io.EOF
 	}
 
-	mr := &bsr.mrs[bsr.mrIdx]
-	bsr.mrIdx++
+	mr := &bsr.mrs[bsr.mrIdx]  // 第一次调用的时候，指向 []metaindexRow 的下标 0
+	bsr.mrIdx++  // 下次读的时候，会跳到下个下标
 
 	// Read compressed index block.
 	bsr.packedBuf = bytesutil.Resize(bsr.packedBuf, int(mr.indexBlockSize))
@@ -280,7 +280,7 @@ func (bsr *blockStreamReader) readNextBHS() error {
 	bsr.bhIdx = 0
 	b := bsr.unpackedBuf
 	for i := 0; i < int(mr.blockHeadersCount); i++ {
-		tail, err := bsr.bhs[i].Unmarshal(b)
+		tail, err := bsr.bhs[i].Unmarshal(b)  // 反序列化所有的 blockHeader
 		if err != nil {
 			return fmt.Errorf("cannot unmarshal blockHeader #%d in the index block #%d: %w", len(bsr.bhs), bsr.mrIdx, err)
 		}
@@ -299,7 +299,7 @@ func (bsr *blockStreamReader) Error() error {
 	return bsr.err
 }
 
-func getBlockStreamReader() *blockStreamReader {
+func getBlockStreamReader() *blockStreamReader {  // blockStreamReader 的内存池
 	v := bsrPool.Get()
 	if v == nil {
 		return &blockStreamReader{}

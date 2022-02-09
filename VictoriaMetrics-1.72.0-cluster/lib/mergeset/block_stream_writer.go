@@ -78,7 +78,7 @@ func (bsw *blockStreamWriter) InitFromInmemoryPart(ip *inmemoryPart) {
 
 // InitFromFilePart initializes bsw from a file-based part on the given path.
 //
-// The bsw doesn't pollute OS page cache if nocache is set.
+// The bsw doesn't pollute OS page cache if nocache is set.  // 指定路径来创建一个新的 part 文件夹
 func (bsw *blockStreamWriter) InitFromFilePart(path string, nocache bool, compressLevel int) error {
 	path = filepath.Clean(path)
 
