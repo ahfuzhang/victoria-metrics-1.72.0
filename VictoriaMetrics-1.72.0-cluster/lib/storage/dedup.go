@@ -55,7 +55,7 @@ func deduplicateInternal(srcTimestamps []int64, srcValues []float64, dedupInterv
 	return dstTimestamps, dstValues
 }
 
-func deduplicateSamplesDuringMerge(srcTimestamps, srcValues []int64, dedupInterval int64) ([]int64, []int64) {
+func deduplicateSamplesDuringMerge(srcTimestamps, srcValues []int64, dedupInterval int64) ([]int64, []int64) {  // 在一个时间窗口内，对同一个time series的重复timestamp去重
 	if !needsDedup(srcTimestamps, dedupInterval) {
 		// Fast path - nothing to deduplicate
 		return srcTimestamps, srcValues

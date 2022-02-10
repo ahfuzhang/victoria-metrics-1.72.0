@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/httpserver"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/timerpool"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -29,7 +30,7 @@ func Init() {
 }
 
 // Do calls f with the limited concurrency.
-func Do(f func() error) error {
+func Do(f func() error) error {  // vm-insert 的 http 模块的并发限制
 	// Limit the number of conurrent f calls in order to prevent from excess
 	// memory usage and CPU trashing.
 	select {

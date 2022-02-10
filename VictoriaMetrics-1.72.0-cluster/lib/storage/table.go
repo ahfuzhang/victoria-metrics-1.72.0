@@ -265,27 +265,27 @@ func (tb *table) ForceMergePartitions(partitionNamePrefix string) error {
 }
 
 // AddRows adds the given rows to the table tb.
-func (tb *table) AddRows(rows []rawRow) error {
+func (tb *table) AddRows(rows []rawRow) error {  // 插入数据
 	if len(rows) == 0 {
 		return nil
 	}
 
 	// Verify whether all the rows may be added to a single partition.
-	ptwsX := getPartitionWrappers()
+	ptwsX := getPartitionWrappers()  // 从内存池获取对象
 	defer putPartitionWrappers(ptwsX)
 
-	ptwsX.a = tb.GetPartitions(ptwsX.a[:0])
+	ptwsX.a = tb.GetPartitions(ptwsX.a[:0])  // 拷贝多个数据分区对象
 	ptws := ptwsX.a
-	for i, ptw := range ptws {
+	for i, ptw := range ptws {  //遍历每个 partition
 		singlePt := true
-		for j := range rows {
-			if !ptw.pt.HasTimestamp(rows[j].Timestamp) {
+		for j := range rows {  //遍历每行
+			if !ptw.pt.HasTimestamp(rows[j].Timestamp) {  // 检查当前分区是否在支持的时间范围内
 				singlePt = false
 				break
 			}
 		}
 		if !singlePt {
-			continue
+			continue  // ？？？ 这里不明白，干嘛不找每个time series各自适合的分区？ 看起来是全部分区都没找到的情况下，在这个循环后的代码中处理的
 		}
 
 		if i != 0 {
@@ -294,7 +294,7 @@ func (tb *table) AddRows(rows []rawRow) error {
 			tb.ptwsLock.Lock()
 			for j := range tb.ptws {
 				if ptw == tb.ptws[j] {
-					tb.ptws[0], tb.ptws[j] = tb.ptws[j], tb.ptws[0]
+					tb.ptws[0], tb.ptws[j] = tb.ptws[j], tb.ptws[0]  // ??? 没看懂
 					break
 				}
 			}
@@ -486,7 +486,7 @@ func (tb *table) finalDedupWatcher() {
 func (tb *table) GetPartitions(dst []*partitionWrapper) []*partitionWrapper {
 	tb.ptwsLock.Lock()
 	for _, ptw := range tb.ptws {
-		ptw.incRef()
+		ptw.incRef()  // 通过引用计数来复制 数据分区 的对象
 		dst = append(dst, ptw)
 	}
 	tb.ptwsLock.Unlock()
@@ -558,7 +558,7 @@ func mustClosePartitions(pts []*partition) {
 }
 
 type partitionWrappers struct {
-	a []*partitionWrapper
+	a []*partitionWrapper  // 数据分区对象
 }
 
 func getPartitionWrappers() *partitionWrappers {

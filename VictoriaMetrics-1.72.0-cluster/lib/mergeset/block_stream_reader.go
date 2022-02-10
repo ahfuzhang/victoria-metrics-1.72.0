@@ -13,7 +13,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 )
 
-type blockStreamReader struct {
+type blockStreamReader struct {  // 用于 part 文件夹的数据读取
 	// Block contains the current block if Next returned true.
 	Block inmemoryBlock
 
@@ -27,7 +27,7 @@ type blockStreamReader struct {
 	// All the metaindexRows.
 	// The blockStreamReader doesn't own mrs - it must be alive
 	// during the read.
-	mrs []metaindexRow  // 通过 inmemoryPart初始化的时候，这个数组的长度至少是1
+	mrs []metaindexRow  // 通过 inmemoryPart初始化的时候，这个数组的长度至少是1  // todo: 封装得不好，游标方式读取数据的时候，应该有对应方法来访问这些成员
 
 	// The index for the currently processed metaindexRow from mrs.
 	mrIdx int  // 指向 []metaindexRow 数组的下标
@@ -197,7 +197,7 @@ func (bsr *blockStreamReader) Next() bool {  // 把压缩的数据还原到内�
 				// Check the last item.
 				b := &bsr.Block
 				lastItem := b.items[len(b.items)-1].Bytes(b.data)
-				if string(bsr.ph.lastItem) != string(lastItem) {  // todo: 优化string()
+				if string(bsr.ph.lastItem) != string(lastItem) {  // 编译器会优化string()，不会产生拷贝
 					err = fmt.Errorf("unexpected last item; got %X; want %X", lastItem, bsr.ph.lastItem)
 				}
 			} else {
@@ -243,7 +243,7 @@ func (bsr *blockStreamReader) Next() bool {  // 把压缩的数据还原到内�
 		bsr.firstItemChecked = true
 		b := &bsr.Block
 		firstItem := b.items[0].Bytes(b.data)
-		if string(bsr.ph.firstItem) != string(firstItem) {  //todo: string()值得优化
+		if string(bsr.ph.firstItem) != string(firstItem) {
 			bsr.err = fmt.Errorf("unexpected first item; got %X; want %X", firstItem, bsr.ph.firstItem)
 			return false
 		}

@@ -32,13 +32,13 @@ func (mp *inmemoryPart) Reset() {
 }
 
 // InitFromRows initializes mp from the given rows.
-func (mp *inmemoryPart) InitFromRows(rows []rawRow) {
+func (mp *inmemoryPart) InitFromRows(rows []rawRow) {  // 一般在 partition 的 flush 操作中执行，一般写入1万行数据
 	if len(rows) == 0 {
 		logger.Panicf("BUG: Inmemory.InitFromRows must accept at least one row")
 	}
 
 	mp.Reset()
-	rrm := getRawRowsMarshaler()
+	rrm := getRawRowsMarshaler()  // 用于序列化的对象
 	rrm.marshalToInmemoryPart(mp, rows)
 	putRawRowsMarshaler(rrm)
 	mp.creationTime = fasttime.UnixTimestamp()

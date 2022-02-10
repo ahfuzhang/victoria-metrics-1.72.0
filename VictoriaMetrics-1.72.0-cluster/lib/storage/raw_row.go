@@ -9,7 +9,7 @@ import (
 )
 
 // rawRow reperesents raw timeseries row.
-type rawRow struct {
+type rawRow struct {  // 插入数据文件的原始数据格式
 	// TSID is time series id.
 	TSID TSID
 
@@ -29,7 +29,7 @@ type rawRow struct {
 type rawRowsMarshaler struct {
 	bsw blockStreamWriter
 
-	auxTimestamps  []int64
+	auxTimestamps  []int64  // 在连续多条TSID相同的情况下， timestamp的数据直接追加到这里
 	auxValues      []int64
 	auxFloatValues []float64
 }
@@ -46,7 +46,7 @@ func (rrm *rawRowsMarshaler) reset() {
 type rawRowsSort []rawRow
 
 func (rrs *rawRowsSort) Len() int { return len(*rrs) }
-func (rrs *rawRowsSort) Less(i, j int) bool {
+func (rrs *rawRowsSort) Less(i, j int) bool {  // 对 TSID 和 time stamp进行排序
 	x := *rrs
 	if i < 0 || j < 0 || i >= len(x) || j >= len(x) {
 		// This is no-op for compiler, so it doesn't generate panic code
@@ -84,7 +84,7 @@ func (rrs *rawRowsSort) Swap(i, j int) {
 	x[i], x[j] = x[j], x[i]
 }
 
-func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawRow) {
+func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawRow) {  // 把1万个data point放到 inmemoryPart
 	if len(rows) == 0 {
 		return
 	}
@@ -92,15 +92,15 @@ func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawR
 		logger.Panicf("BUG: rows count must be smaller than 2^32; got %d", len(rows))
 	}
 
-	rrm.bsw.InitFromInmemoryPart(mp)
+	rrm.bsw.InitFromInmemoryPart(mp)  // 初始化 blockStreamWriter 对象
 
-	ph := &mp.ph
+	ph := &mp.ph  // part header
 	ph.Reset()
 
 	// Sort rows by (TSID, Timestamp) if they aren't sorted yet.
 	rrs := rawRowsSort(rows)
 	if !sort.IsSorted(&rrs) {
-		sort.Sort(&rrs)
+		sort.Sort(&rrs)  // 对 tsid 和 timestamp 排序
 	}
 
 	// Group rows into blocks.
@@ -111,24 +111,24 @@ func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawR
 	precisionBits := r.PrecisionBits
 	tmpBlock := getBlock()
 	defer putBlock(tmpBlock)
-	for i := range rows {
+	for i := range rows {  // 逐条处理原始数据
 		r = &rows[i]
-		if r.TSID.MetricID == tsid.MetricID && len(rrm.auxTimestamps) < maxRowsPerBlock {
+		if r.TSID.MetricID == tsid.MetricID && len(rrm.auxTimestamps) < maxRowsPerBlock {  // 处理连续多条相同的 TSID 的数据
 			rrm.auxTimestamps = append(rrm.auxTimestamps, r.Timestamp)
 			rrm.auxFloatValues = append(rrm.auxFloatValues, r.Value)
 			continue
 		}
 
 		rrm.auxValues, scale = decimal.AppendFloatToDecimal(rrm.auxValues[:0], rrm.auxFloatValues)
-		tmpBlock.Init(tsid, rrm.auxTimestamps, rrm.auxValues, scale, precisionBits)
+		tmpBlock.Init(tsid, rrm.auxTimestamps, rrm.auxValues, scale, precisionBits)  // 初始化block对象
 		rrm.bsw.WriteExternalBlock(tmpBlock, ph, &rowsMerged)
 
-		tsid = &r.TSID
+		tsid = &r.TSID  // 记录上一次产生的TSID
 		precisionBits = r.PrecisionBits
 		rrm.auxTimestamps = append(rrm.auxTimestamps[:0], r.Timestamp)
 		rrm.auxFloatValues = append(rrm.auxFloatValues[:0], r.Value)
 	}
-
+	// 最后一个 tsid 的数据
 	rrm.auxValues, scale = decimal.AppendFloatToDecimal(rrm.auxValues[:0], rrm.auxFloatValues)
 	tmpBlock.Init(tsid, rrm.auxTimestamps, rrm.auxValues, scale, precisionBits)
 	rrm.bsw.WriteExternalBlock(tmpBlock, ph, &rowsMerged)

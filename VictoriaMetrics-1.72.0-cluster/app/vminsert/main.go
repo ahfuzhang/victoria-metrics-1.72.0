@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/clusternative"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/csvimport"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/datadog"
@@ -40,7 +42,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/protoparser/common"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/writeconcurrencylimiter"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -67,7 +68,7 @@ var (
 	opentsdbhttpServer  *opentsdbhttpserver.Server
 )
 
-func main() {
+func main() {  // 入口
 	// Write flags and help message to stdout, since it is easier to grep or pipe.
 	flag.CommandLine.SetOutput(os.Stdout)
 	flag.Usage = usage
@@ -123,7 +124,7 @@ func main() {
 	}
 
 	go func() {
-		httpserver.Serve(*httpListenAddr, requestHandler)
+		httpserver.Serve(*httpListenAddr, requestHandler)  // remote-write协议
 	}()
 
 	sig := procutil.WaitForSigterm()
@@ -163,7 +164,7 @@ func main() {
 	logger.Infof("the vminsert has been stopped")
 }
 
-func requestHandler(w http.ResponseWriter, r *http.Request) bool {
+func requestHandler(w http.ResponseWriter, r *http.Request) bool {  // 处理http请求
 	startTime := time.Now()
 	defer requestDuration.UpdateDuration(startTime)
 
@@ -190,7 +191,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	switch p.Suffix {
-	case "prometheus/", "prometheus", "prometheus/api/v1/write":
+	case "prometheus/", "prometheus", "prometheus/api/v1/write":  // remote write协议的处理
 		prometheusWriteRequests.Inc()
 		if err := promremotewrite.InsertHandler(at, r); err != nil {
 			prometheusWriteErrors.Inc()

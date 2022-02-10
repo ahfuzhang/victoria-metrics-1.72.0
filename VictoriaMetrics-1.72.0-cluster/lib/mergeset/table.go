@@ -218,7 +218,7 @@ type partWrapper struct {
 
 	mp *inmemoryPart
 
-	refCount uint64
+	refCount uint64  // 使用引用计数的方法来管理
 
 	isInMerge bool
 }

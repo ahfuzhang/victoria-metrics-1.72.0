@@ -164,7 +164,7 @@ func AppendDecimalToFloat(dst []float64, va []int64, e int16) []float64 {
 // each v to dst returning it as va.
 //
 // It tries minimizing each item in dst.
-func AppendFloatToDecimal(dst []int64, src []float64) ([]int64, int16) {
+func AppendFloatToDecimal(dst []int64, src []float64) ([]int64, int16) {  // 猜测是数值压缩的算法
 	if len(src) == 0 {
 		return dst, 0
 	}

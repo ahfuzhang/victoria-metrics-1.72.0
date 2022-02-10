@@ -82,7 +82,7 @@ func getMaxRawRowsPerShard() int {
 	maxRawRowsPerPartitionOnce.Do(func() {
 		n := memory.Allowed() / rawRowsShardsPerPartition / 256 / int(unsafe.Sizeof(rawRow{}))
 		if n < 1e4 {
-			n = 1e4
+			n = 1e4  // 最小1万
 		}
 		if n > 500e3 {
 			n = 500e3
@@ -155,7 +155,7 @@ type partition struct {
 	// rawRows contains recently added rows that haven't been converted into parts yet.
 	//
 	// rawRows aren't used in search for performance reasons.
-	rawRows rawRowsShards
+	rawRows rawRowsShards  // 内存中的row，一开始数据写入到这里
 
 	snapshotLock sync.RWMutex
 
@@ -420,7 +420,7 @@ func (pt *partition) UpdateMetrics(m *partitionMetrics) {
 //
 // All the rows must fit the partition by timestamp range
 // and must have valid PrecisionBits.
-func (pt *partition) AddRows(rows []rawRow) {
+func (pt *partition) AddRows(rows []rawRow) {  // 在具体的分区中插入数据
 	if len(rows) == 0 {
 		return
 	}
@@ -431,8 +431,8 @@ func (pt *partition) AddRows(rows []rawRow) {
 		if !pt.HasTimestamp(r.Timestamp) {
 			logger.Panicf("BUG: row %+v has Timestamp outside partition %q range %+v", r, pt.smallPartsPath, &pt.tr)
 		}
-		if err := encoding.CheckPrecisionBits(r.PrecisionBits); err != nil {
-			logger.Panicf("BUG: row %+v has invalid PrecisionBits: %s", r, err)
+		if err := encoding.CheckPrecisionBits(r.PrecisionBits); err != nil {  // 这个代码意义不大，感觉可以去掉。或者把这个检查放到vm-insert中
+			logger.Panicf("BUG: row %+v has invalid PrecisionBits: %s", r, err)  // 这里会引发panic
 		}
 	}
 
@@ -450,12 +450,12 @@ func (rrss *rawRowsShards) init() {
 	rrss.shards = make([]rawRowsShard, rawRowsShardsPerPartition)
 }
 
-func (rrss *rawRowsShards) addRows(pt *partition, rows []rawRow) {
+func (rrss *rawRowsShards) addRows(pt *partition, rows []rawRow) {  // pt是父对象
 	n := atomic.AddUint32(&rrss.shardIdx, 1)
 	shards := rrss.shards
 	idx := n % uint32(len(shards))
 	shard := &shards[idx]
-	shard.addRows(pt, rows)
+	shard.addRows(pt, rows)  // 分桶，减少桶的竞争
 }
 
 func (rrss *rawRowsShards) Len() int {
@@ -467,8 +467,8 @@ func (rrss *rawRowsShards) Len() int {
 }
 
 type rawRowsShard struct {
-	mu            sync.Mutex
-	rows          []rawRow
+	mu            sync.Mutex  //当前桶的锁
+	rows          []rawRow  // 把要插入的数据缓存在这里
 	lastFlushTime uint64
 }
 
@@ -479,8 +479,8 @@ func (rrs *rawRowsShard) Len() int {
 	return n
 }
 
-func (rrs *rawRowsShard) addRows(pt *partition, rows []rawRow) {
-	var rowsToFlush []rawRow
+func (rrs *rawRowsShard) addRows(pt *partition, rows []rawRow) {  // 在具体的桶里面插入数据
+	var rowsToFlush []rawRow  // partition 是父对象
 
 	rrs.mu.Lock()
 	if cap(rrs.rows) == 0 {
@@ -491,24 +491,24 @@ func (rrs *rawRowsShard) addRows(pt *partition, rows []rawRow) {
 	capacity := maxRowsCount - len(rrs.rows)
 	if capacity >= len(rows) {
 		// Fast path - rows fit capacity.
-		rrs.rows = append(rrs.rows, rows...)
+		rrs.rows = append(rrs.rows, rows...)  // 空间足够，直接缓存进去
 	} else {
 		// Slow path - rows don't fit capacity.
 		// Put rrs.rows and rows to rowsToFlush and convert it to a part.
-		rowsToFlush = append(rowsToFlush, rrs.rows...)
+		rowsToFlush = append(rowsToFlush, rrs.rows...)  // 空间不够，拷贝到新数组，执行 flush操作
 		rowsToFlush = append(rowsToFlush, rows...)
 		rrs.rows = rrs.rows[:0]
 		rrs.lastFlushTime = fasttime.UnixTimestamp()
 	}
 	rrs.mu.Unlock()
 
-	pt.flushRowsToParts(rowsToFlush)
+	pt.flushRowsToParts(rowsToFlush)  // 把 []rawRow 数组进行 flush操作
 }
 
-func (pt *partition) flushRowsToParts(rows []rawRow) {
-	maxRows := getMaxRawRowsPerShard()
+func (pt *partition) flushRowsToParts(rows []rawRow) {  // 把 []rawRow 数组进行 flush操作
+	maxRows := getMaxRawRowsPerShard()  // 最少1万个 datapoint
 	var wg sync.WaitGroup
-	for len(rows) > 0 {
+	for len(rows) > 0 {  // 分成N组，开N个协程来 flush
 		n := maxRows
 		if n > len(rows) {
 			n = len(rows)
@@ -523,12 +523,12 @@ func (pt *partition) flushRowsToParts(rows []rawRow) {
 	wg.Wait()
 }
 
-func (pt *partition) addRowsPart(rows []rawRow) {
+func (pt *partition) addRowsPart(rows []rawRow) {  //在协程中执行，rows一般是1万行
 	if len(rows) == 0 {
 		return
 	}
 
-	mp := getInmemoryPart()
+	mp := getInmemoryPart()  // 从对象池获取
 	mp.InitFromRows(rows)
 
 	// Make sure the part may be added.
@@ -581,7 +581,7 @@ func (pt *partition) addRowsPart(rows []rawRow) {
 }
 
 // HasTimestamp returns true if the pt contains the given timestamp.
-func (pt *partition) HasTimestamp(timestamp int64) bool {
+func (pt *partition) HasTimestamp(timestamp int64) bool {  // 每个partition都有自己管理的起止时间。检查要插入的数据是否在时间范围以内
 	return timestamp >= pt.tr.MinTimestamp && timestamp <= pt.tr.MaxTimestamp
 }
 

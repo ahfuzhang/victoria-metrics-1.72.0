@@ -78,7 +78,7 @@ func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time s
 	ps.err = nil
 
 	if string(k) > string(ps.p.ph.lastItem) {  // part 与 part 之间是排序的吗？
-		// Not matching items in the part.  // todo: string() 值得优化
+		// Not matching items in the part.
 		ps.err = io.EOF
 		return  // 如果 time sereis比 part 的最后一个 item 还要大，说明数据不在这个part里，返回EOF
 	}
@@ -110,7 +110,7 @@ func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time s
 		logger.Panicf("BUG: part without metaindex rows passed to partSearch")
 	}
 	n := sort.Search(len(ps.mrs), func(i int) bool {  // 二分查找
-		return string(k) <= string(ps.mrs[i].firstItem)  // todo: 优化string()
+		return string(k) <= string(ps.mrs[i].firstItem)  // 编译器优化string()
 	})
 	if n > 0 {
 		// The given k may be located in the previous metaindexRow, so go to it.
@@ -187,7 +187,7 @@ func (ps *partSearch) tryFastSeek(k []byte) bool {
 	if idx > 0 {
 		idx--  // idx是干嘛的？没看懂
 	}
-	if string(k) < items[idx].String(data) {  // todo: 优化string()
+	if string(k) < items[idx].String(data) {  // 编译器优化string()
 		if string(k) < items[0].String(data) {  // 在上次查询的index的基础上继续查找???
 			// The item is located in previous blocks.
 			return false

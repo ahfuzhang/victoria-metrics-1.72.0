@@ -1,0 +1,6 @@
+* [大铁憨(胡建洪):浅析下开源时序数据库VictoriaMetrics的存储机制](https://zhuanlan.zhihu.com/p/368912946)
+* [介绍一个golang库：fastcache](https://mp.weixin.qq.com/s?__biz=MzI0NzM3NDAyNQ==&mid=2247483766&idx=1&sn=5b941a3c2211eff104064d595c04e7df&chksm=e9b048d0dec7c1c687e639928c8ff3e299194e8ff1ed8ad5d0eb2258468eb48ead77e273e0d6&token=1570151211&lang=zh_CN#rd)
+* [介绍一个golang库：zstd](https://www.cnblogs.com/ahfuzhang/p/15842350.html)
+* [golang源码阅读：VictoriaMetrics中协程优先级的处理方式](https://www.cnblogs.com/ahfuzhang/p/15847860.html)
+* [ahfuzhang随笔分类 - VictoriaMetrics](https://www.cnblogs.com/ahfuzhang/category/2076800.html)
+* [大铁憨(胡建洪)的知乎专栏](https://www.zhihu.com/people/datiehan/posts)

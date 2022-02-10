@@ -3,6 +3,8 @@ package promremotewrite
 import (
 	"net/http"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/netstorage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/relabel"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/auth"
@@ -13,7 +15,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/tenantmetrics"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/writeconcurrencylimiter"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -23,32 +24,32 @@ var (
 )
 
 // InsertHandler processes remote write for prometheus.
-func InsertHandler(at *auth.Token, req *http.Request) error {
+func InsertHandler(at *auth.Token, req *http.Request) error {  // remote write协议的处理
 	extraLabels, err := parserCommon.GetExtraLabels(req)
 	if err != nil {
 		return err
 	}
-	return writeconcurrencylimiter.Do(func() error {
-		return parser.ParseStream(req.Body, func(tss []prompb.TimeSeries) error {
-			return insertRows(at, tss, extraLabels)
+	return writeconcurrencylimiter.Do(func() error {  // 并发数限制为CPU核数的4倍
+		return parser.ParseStream(req.Body, func(tss []prompb.TimeSeries) error {  // 对 prompb的数据decode
+			return insertRows(at, tss, extraLabels)    // 对解析好的time series数据执行插入操作
 		})
 	})
 }
 
-func insertRows(at *auth.Token, timeseries []prompb.TimeSeries, extraLabels []prompbmarshal.Label) error {
-	ctx := netstorage.GetInsertCtx()
+func insertRows(at *auth.Token, timeseries []prompb.TimeSeries, extraLabels []prompbmarshal.Label) error {  // 数据的插入逻辑
+	ctx := netstorage.GetInsertCtx()  // 从内存池获取
 	defer netstorage.PutInsertCtx(ctx)
 
 	ctx.Reset() // This line is required for initializing ctx internals.
 	rowsTotal := 0
 	hasRelabeling := relabel.HasRelabeling()
-	for i := range timeseries {
+	for i := range timeseries {  //遍历请求过来的每个time series
 		ts := &timeseries[i]
 		rowsTotal += len(ts.Samples)
 		ctx.Labels = ctx.Labels[:0]
 		srcLabels := ts.Labels
 		for _, srcLabel := range srcLabels {
-			ctx.AddLabelBytes(srcLabel.Name, srcLabel.Value)
+			ctx.AddLabelBytes(srcLabel.Name, srcLabel.Value)  // 追加到一个数组中
 		}
 		for j := range extraLabels {
 			label := &extraLabels[j]
@@ -61,7 +62,7 @@ func insertRows(at *auth.Token, timeseries []prompb.TimeSeries, extraLabels []pr
 			// Skip metric without labels.
 			continue
 		}
-		ctx.SortLabelsIfNeeded()
+		ctx.SortLabelsIfNeeded()  // 最好是打开，否则vm-storage不会再对标签排序
 		storageNodeIdx := ctx.GetStorageNodeIdx(at, ctx.Labels)
 		ctx.MetricNameBuf = ctx.MetricNameBuf[:0]
 		samples := ts.Samples

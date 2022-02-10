@@ -126,7 +126,7 @@ again:  // todo: 丑陋的代码
 	data := bsr.Block.data
 	for bsr.blockItemIdx < len(bsr.Block.items) {
 		item := items[bsr.blockItemIdx].Bytes(data)
-		if hasNextItem && string(item) > string(nextItem) {  // todo: 优化string()
+		if hasNextItem && string(item) > string(nextItem) {  // 编译器优化string()
 			break
 		}
 		if !bsm.ib.Add(item) {
@@ -212,7 +212,7 @@ func (bh *bsrHeap) Swap(i, j int) {
 
 func (bh *bsrHeap) Less(i, j int) bool {
 	x := *bh
-	return string(x[i].bh.firstItem) < string(x[j].bh.firstItem)  //todo: 优化string()
+	return string(x[i].bh.firstItem) < string(x[j].bh.firstItem)  //编译器优化string()
 }
 
 func (bh *bsrHeap) Pop() interface{} {  // 去掉最后一个元素

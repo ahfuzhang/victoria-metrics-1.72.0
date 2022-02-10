@@ -10,17 +10,17 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fs"
 )
 
-type blockStreamWriter struct {
+type blockStreamWriter struct {  // 用于把 inmemoryPart 写入 part 文件夹下的四个数据文件
 	compressLevel int
 	path          string
 
-	metaindexWriter filestream.WriteCloser
+	metaindexWriter filestream.WriteCloser  // 四个数据文件
 	indexWriter     filestream.WriteCloser
 	itemsWriter     filestream.WriteCloser
 	lensWriter      filestream.WriteCloser
 
-	sb storageBlock
-	bh blockHeader
+	sb storageBlock  // 存储 items.bin, lens.bin序列化后的数据
+	bh blockHeader   //
 	mr metaindexRow
 
 	unpackedIndexBlockBuf []byte
@@ -129,7 +129,7 @@ func (bsw *blockStreamWriter) InitFromFilePart(path string, nocache bool, compre
 	bsw.compressLevel = compressLevel
 	bsw.path = path
 
-	bsw.metaindexWriter = metaindexFile
+	bsw.metaindexWriter = metaindexFile  // 各个数据文件的句柄
 	bsw.indexWriter = indexFile
 	bsw.itemsWriter = itemsFile
 	bsw.lensWriter = lensFile
@@ -146,7 +146,7 @@ func (bsw *blockStreamWriter) MustClose() {
 
 	// Compress and write metaindex.
 	bsw.packedMetaindexBuf = encoding.CompressZSTDLevel(bsw.packedMetaindexBuf[:0], bsw.unpackedMetaindexBuf, bsw.compressLevel)
-	fs.MustWriteData(bsw.metaindexWriter, bsw.packedMetaindexBuf)
+	fs.MustWriteData(bsw.metaindexWriter, bsw.packedMetaindexBuf)  // 在销毁对象的时候，才写入 metaindex.bin
 
 	// Close all the writers.
 	bsw.metaindexWriter.MustClose()
@@ -166,22 +166,22 @@ func (bsw *blockStreamWriter) MustClose() {
 // WriteBlock writes ib to bsw.
 //
 // ib must be sorted.
-func (bsw *blockStreamWriter) WriteBlock(ib *inmemoryBlock) {
+func (bsw *blockStreamWriter) WriteBlock(ib *inmemoryBlock) {  // 内存中的数据写入磁盘
 	bsw.bh.firstItem, bsw.bh.commonPrefix, bsw.bh.itemsCount, bsw.bh.marshalType = ib.MarshalSortedData(&bsw.sb, bsw.bh.firstItem[:0], bsw.bh.commonPrefix[:0], bsw.compressLevel)
-
+		// 上面初始化 blockHeader， 并且把数据写入 storageBlock 中
 	if !bsw.mrFirstItemCaught {
 		bsw.mr.firstItem = append(bsw.mr.firstItem[:0], bsw.bh.firstItem...)
 		bsw.mrFirstItemCaught = true
 	}
 
 	// Write itemsData
-	fs.MustWriteData(bsw.itemsWriter, bsw.sb.itemsData)
+	fs.MustWriteData(bsw.itemsWriter, bsw.sb.itemsData)  // 写入 items.bin，包含了完整的 time series的数据
 	bsw.bh.itemsBlockSize = uint32(len(bsw.sb.itemsData))
 	bsw.bh.itemsBlockOffset = bsw.itemsBlockOffset
 	bsw.itemsBlockOffset += uint64(bsw.bh.itemsBlockSize)
 
 	// Write lensData
-	fs.MustWriteData(bsw.lensWriter, bsw.sb.lensData)
+	fs.MustWriteData(bsw.lensWriter, bsw.sb.lensData)  // 写入 lens.bin
 	bsw.bh.lensBlockSize = uint32(len(bsw.sb.lensData))
 	bsw.bh.lensBlockOffset = bsw.lensBlockOffset
 	bsw.lensBlockOffset += uint64(bsw.bh.lensBlockSize)
@@ -206,7 +206,7 @@ func (bsw *blockStreamWriter) flushIndexData() {
 
 	// Write indexBlock.
 	bsw.packedIndexBlockBuf = encoding.CompressZSTDLevel(bsw.packedIndexBlockBuf[:0], bsw.unpackedIndexBlockBuf, bsw.compressLevel)
-	fs.MustWriteData(bsw.indexWriter, bsw.packedIndexBlockBuf)
+	fs.MustWriteData(bsw.indexWriter, bsw.packedIndexBlockBuf)  // 写入 index.bin
 	bsw.mr.indexBlockSize = uint32(len(bsw.packedIndexBlockBuf))
 	bsw.mr.indexBlockOffset = bsw.indexBlockOffset
 	bsw.indexBlockOffset += uint64(bsw.mr.indexBlockSize)
@@ -220,7 +220,7 @@ func (bsw *blockStreamWriter) flushIndexData() {
 	bsw.mrFirstItemCaught = false
 }
 
-func getBlockStreamWriter() *blockStreamWriter {
+func getBlockStreamWriter() *blockStreamWriter {  // 从对象池获取对象
 	v := bswPool.Get()
 	if v == nil {
 		return &blockStreamWriter{}

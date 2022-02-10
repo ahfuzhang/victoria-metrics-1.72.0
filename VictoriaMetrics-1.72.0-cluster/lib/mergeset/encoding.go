@@ -50,7 +50,7 @@ func (ib *inmemoryBlock) Len() int { return len(ib.items) }
 func (ib *inmemoryBlock) Less(i, j int) bool {  // 内部数组的排序
 	data := ib.data
 	items := ib.items
-	return string(items[i].Bytes(data)) < string(items[j].Bytes(data))  // todo: 优化string()的拷贝
+	return string(items[i].Bytes(data)) < string(items[j].Bytes(data))  // 编译器优化string()的拷贝
 }
 
 func (ib *inmemoryBlock) Swap(i, j int) {

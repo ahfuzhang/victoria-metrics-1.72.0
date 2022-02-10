@@ -1845,7 +1845,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		r.Timestamp = mr.Timestamp
 		r.Value = mr.Value
 		r.PrecisionBits = precisionBits  // 默认 64 位精度
-		if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {  // todo: 这里的string()会带来拷贝，值得优化
+		if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {
 			// Fast path - the current mr contains the same metric name as the previous mr, so it contains the same TSID.
 			// This path should trigger on bulk imports when many rows contain the same MetricNameRaw.
 			r.TSID = prevTSID
@@ -1891,7 +1891,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		is := idb.getIndexSearch(0, 0, noDeadline)  // 使用 index search对象来搜索，有个对象池
 		prevMetricNameRaw = nil
 		var slowInsertsCount uint64
-		for i := range pendingMetricRows {  //所有的新行
+		for i := range pendingMetricRows {  //遍历所有的新行
 			pmr := &pendingMetricRows[i]
 			mr := pmr.mr
 			dstMrs[j] = mr
@@ -1900,7 +1900,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 			r.Timestamp = mr.Timestamp
 			r.Value = mr.Value
 			r.PrecisionBits = precisionBits
-			if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {  // todo: string() 值得优化
+			if string(mr.MetricNameRaw) == string(prevMetricNameRaw) {
 				// Fast path - the current mr contains the same metric name as the previous mr, so it contains the same TSID.
 				// This path should trigger on bulk imports when many rows contain the same MetricNameRaw.
 				r.TSID = prevTSID
@@ -1937,7 +1937,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 	rows = rows[:j]
 
 	var firstError error
-	if err := s.tb.AddRows(rows); err != nil {
+	if err := s.tb.AddRows(rows); err != nil {  // 索引部分处理完了后，处理数据部分
 		firstError = fmt.Errorf("cannot add rows to table: %w", err)
 	}
 	if err := s.updatePerDateData(rows, dstMrs); err != nil && firstError == nil {
@@ -1949,7 +1949,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 	return nil
 }
 
-func (s *Storage) isSeriesCardinalityExceeded(metricID uint64, metricNameRaw []byte) bool {
+func (s *Storage) isSeriesCardinalityExceeded(metricID uint64, metricNameRaw []byte) bool { //通过bloomfilter来限制单位时间(1小时和1天)的time series总数
 	if sl := s.hourlySeriesLimiter; sl != nil && !sl.Add(metricID) {
 		atomic.AddUint64(&s.hourlySeriesLimitRowsDropped, 1)
 		logSkippedSeries(metricNameRaw, "-storage.maxHourlySeries", sl.MaxItems())

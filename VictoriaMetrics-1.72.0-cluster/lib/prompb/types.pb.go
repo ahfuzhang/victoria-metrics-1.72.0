@@ -16,7 +16,7 @@ type Sample struct {
 }
 
 // TimeSeries is a timeseries.
-type TimeSeries struct {
+type TimeSeries struct {  // gogoproto格式的time series数据
 	Labels  []Label
 	Samples []Sample
 }

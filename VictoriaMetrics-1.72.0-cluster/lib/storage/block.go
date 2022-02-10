@@ -20,13 +20,13 @@ const (
 )
 
 // Block represents a block of time series values for a single TSID.
-type Block struct {
+type Block struct {  // 数据部分的block对象
 	bh blockHeader
 
 	// nextIdx is the next index for reading timestamps and values.
 	nextIdx int
 
-	timestamps []int64
+	timestamps []int64  // 初始化的时候，拷贝到这个缓冲区
 	values     []int64
 
 	// Marshaled representation of block header.
@@ -89,11 +89,11 @@ func (b *Block) RowsCount() int {
 }
 
 // Init initializes b with the given tsid, timestamps, values and scale.
-func (b *Block) Init(tsid *TSID, timestamps, values []int64, scale int16, precisionBits uint8) {
+func (b *Block) Init(tsid *TSID, timestamps, values []int64, scale int16, precisionBits uint8) {  // 初始化 block 对象
 	b.Reset()
-	b.bh.TSID = *tsid
-	b.bh.Scale = scale
-	b.bh.PrecisionBits = precisionBits
+	b.bh.TSID = *tsid  // 当前的 TSID
+	b.bh.Scale = scale  // 数据压缩的情况   decimal.AppendFloatToDecimal() 中返回的
+	b.bh.PrecisionBits = precisionBits  // 当前的精度
 	b.timestamps = append(b.timestamps[:0], timestamps...)
 	b.values = append(b.values[:0], values...)
 }
@@ -148,7 +148,7 @@ func (b *Block) tooBig() bool {
 }
 
 func (b *Block) deduplicateSamplesDuringMerge() {
-	if !isDedupEnabled() {
+	if !isDedupEnabled() {  // 参数配置里面，是否需要去重
 		// Deduplication is disabled
 		return
 	}
