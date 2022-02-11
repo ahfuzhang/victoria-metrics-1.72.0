@@ -26,7 +26,7 @@ func convertToCompositeTagFilterss(tfss []*TagFilters) []*TagFilters {
 	return tfssNew
 }
 
-func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {
+func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {  // tagFilter的格式转换。1.为什么要转换，2.怎么转换
 	var tfssCompiled []*TagFilters
 	// Search for filters on metric name, which will be used for creating composite filters.
 	var names [][]byte
@@ -35,7 +35,7 @@ func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {
 	for _, tf := range tfs.tfs {
 		if len(tf.key) == 0 {
 			if !tf.isNegative && !tf.isRegexp {
-				names = [][]byte{tf.value}
+				names = [][]byte{tf.value}  // 完全匹配
 			} else if !tf.isNegative && tf.isRegexp && len(tf.orSuffixes) > 0 {
 				// Split the filter {__name__=~"name1|...|nameN", other_filters}
 				// into name1{other_filters}, ..., nameN{other_filters}
@@ -234,7 +234,7 @@ func (tfs *TagFilters) Reset(accountID, projectID uint32) {
 }
 
 // tagFilter represents a filter used for filtering tags.
-type tagFilter struct {
+type tagFilter struct {  // 用于匹配 label name , label value的结构
 	key        []byte
 	value      []byte
 	isNegative bool

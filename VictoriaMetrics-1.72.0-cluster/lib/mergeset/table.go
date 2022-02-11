@@ -467,7 +467,7 @@ func (tb *Table) UpdateMetrics(m *TableMetrics) {
 }
 
 // AddItems adds the given items to the tb.
-func (tb *Table) AddItems(items [][]byte) error {
+func (tb *Table) AddItems(items [][]byte) error {  // 把原始KEY写入底层的KV中
 	if err := tb.rawItems.addItems(tb, items); err != nil {
 		return fmt.Errorf("cannot insert data into %q: %w", tb.path, err)
 	}

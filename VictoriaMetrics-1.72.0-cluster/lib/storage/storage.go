@@ -83,7 +83,7 @@ type Storage struct {
 	metricNameCache *workingsetcache.Cache  // fastcache
 
 	// dateMetricIDCache is (Date, MetricID) cache.
-	dateMetricIDCache *dateMetricIDCache
+	dateMetricIDCache *dateMetricIDCache  // 记录 date+metricID 这个类型数据的缓存
 
 	// Fast cache for MetricID values occurred during the current hour.
 	currHourMetricIDs atomic.Value
@@ -128,7 +128,7 @@ type Storage struct {
 	snapshotLock sync.Mutex
 
 	// The minimum timestamp when composite index search can be used.
-	minTimestampForCompositeIndex int64
+	minTimestampForCompositeIndex int64   // ??? 看不懂这个字段是要干啥
 
 	// An inmemory set of deleted metricIDs.
 	//
@@ -285,7 +285,7 @@ func OpenStorage(path string, retentionMsecs int64, maxHourlySeries, maxDailySer
 
 // RetentionMsecs returns retentionMsecs for s.
 func (s *Storage) RetentionMsecs() int64 {
-	return s.retentionMsecs
+	return s.retentionMsecs  // 返回毫秒为单位的存储支持的时间，默认是31天
 }
 
 func (s *Storage) getDeletedMetricIDs() *uint64set.Set {
@@ -1121,7 +1121,7 @@ func (s *Storage) SearchMetricNames(tfss []*TagFilters, tr TimeRange, maxMetrics
 	return mns, nil
 }
 
-// searchTSIDs returns sorted TSIDs for the given tfss and the given tr.
+// searchTSIDs returns sorted TSIDs for the given tfss and the given tr.   // 根据标签，搜索符合的TSID
 func (s *Storage) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int, deadline uint64) ([]TSID, error) {
 	// Do not cache tfss -> tsids here, since the caching is performed
 	// on idb level.
@@ -1130,7 +1130,7 @@ func (s *Storage) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int, 
 	// This should prevent from out of memory errors and CPU trashing when too many
 	// goroutines call searchTSIDs.
 	select {
-	case searchTSIDsConcurrencyCh <- struct{}{}:
+	case searchTSIDsConcurrencyCh <- struct{}{}://限制查询的并发
 	default:
 		// Sleep for a while until giving up
 		atomic.AddUint64(&s.searchTSIDsConcurrencyLimitReached, 1)
@@ -1151,7 +1151,7 @@ func (s *Storage) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int, 
 				cap(searchTSIDsConcurrencyCh), timeout.Seconds())
 		}
 	}
-	tsids, err := s.idb().searchTSIDs(tfss, tr, maxMetrics, deadline)
+	tsids, err := s.idb().searchTSIDs(tfss, tr, maxMetrics, deadline)  // 在 indexDB 中搜索
 	<-searchTSIDsConcurrencyCh
 	if err != nil {
 		return nil, fmt.Errorf("error when searching tsids: %w", err)
@@ -1940,7 +1940,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 	if err := s.tb.AddRows(rows); err != nil {  // 索引部分处理完了后，处理数据部分
 		firstError = fmt.Errorf("cannot add rows to table: %w", err)
 	}
-	if err := s.updatePerDateData(rows, dstMrs); err != nil && firstError == nil {
+	if err := s.updatePerDateData(rows, dstMrs); err != nil && firstError == nil {  // 写入 date + metricID的数据
 		firstError = fmt.Errorf("cannot update per-date data: %w", err)
 	}
 	if firstError != nil {
@@ -2046,7 +2046,7 @@ func putPendingMetricRows(pmrs *pendingMetricRows) {
 var pendingMetricRowsPool sync.Pool
 
 func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
-	var date uint64
+	var date uint64  // 写入每天的 date + metricID 的KEY到KV存储
 	var hour uint64
 	var prevTimestamp int64
 	var (

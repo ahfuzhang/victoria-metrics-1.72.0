@@ -87,7 +87,7 @@ type indexDB struct {
 	extDBLock sync.Mutex
 
 	// Cache for fast TagFilters -> TSIDs lookup.
-	tagFiltersCache *workingsetcache.Cache
+	tagFiltersCache *workingsetcache.Cache  // key 是序列化后的搜索表达式，value是tsid数组
 
 	// The parent storage.
 	s *Storage
@@ -273,7 +273,7 @@ func (db *indexDB) decRef() {
 	logger.Infof("indexDB %q has been dropped", tbPath)
 }
 
-func (db *indexDB) getFromTagFiltersCache(key []byte) ([]TSID, bool) {
+func (db *indexDB) getFromTagFiltersCache(key []byte) ([]TSID, bool) {  // 根据序列化的搜索表达式，在cache中查找TSID
 	compressedBuf := tagBufPool.Get()
 	defer tagBufPool.Put(compressedBuf)
 	compressedBuf.B = db.tagFiltersCache.GetBig(compressedBuf.B[:0], key)
@@ -348,7 +348,7 @@ func (db *indexDB) putMetricNameToCache(metricID uint64, metricName []byte) {
 	db.s.metricNameCache.Set(key[:], metricName)
 }
 
-func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versioned bool) []byte {
+func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versioned bool) []byte {  //把当次的搜索表达式序列化到一个buffer中
 	prefix := ^uint64(0)
 	if versioned {
 		prefix = atomic.LoadUint64(&tagFiltersKeyGen)
@@ -1652,29 +1652,29 @@ func (is *indexSearch) loadDeletedMetricIDs() (*uint64set.Set, error) {
 	return dmis, nil
 }
 
-// searchTSIDs returns sorted tsids matching the given tfss over the given tr.
+// searchTSIDs returns sorted tsids matching the given tfss over the given tr.  // 在indexDB 中搜索
 func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int, deadline uint64) ([]TSID, error) {
 	if len(tfss) == 0 {
 		return nil, nil
 	}
 	if tr.MinTimestamp >= db.s.minTimestampForCompositeIndex {
-		tfss = convertToCompositeTagFilterss(tfss)
+		tfss = convertToCompositeTagFilterss(tfss)  // 转换搜索的标签的格式
 	}
 
 	tfKeyBuf := tagFiltersKeyBufPool.Get()
 	defer tagFiltersKeyBufPool.Put(tfKeyBuf)
 
-	tfKeyBuf.B = marshalTagFiltersKey(tfKeyBuf.B[:0], tfss, tr, true)
-	tsids, ok := db.getFromTagFiltersCache(tfKeyBuf.B)
+	tfKeyBuf.B = marshalTagFiltersKey(tfKeyBuf.B[:0], tfss, tr, true)  // 把搜索标签序列化
+	tsids, ok := db.getFromTagFiltersCache(tfKeyBuf.B)  // 在缓存中搜索
 	if ok {
 		// Fast path - tsids found in the cache.
-		return tsids, nil
+		return tsids, nil  // 找到了就直接返回
 	}
 
 	// Slow path - search for tsids in the db and extDB.
 	accountID := tfss[0].accountID
 	projectID := tfss[0].projectID
-	is := db.getIndexSearch(accountID, projectID, deadline)
+	is := db.getIndexSearch(accountID, projectID, deadline)  // 使用 index search对象来搜索TSID
 	localTSIDs, err := is.searchTSIDs(tfss, tr, maxMetrics)
 	db.putIndexSearch(is)
 	if err != nil {
@@ -1814,31 +1814,31 @@ func mergeTSIDs(a, b []TSID) []TSID {
 	return tsids
 }
 
-func (is *indexSearch) containsTimeRange(tr TimeRange) (bool, error) {
-	ts := &is.ts
-	kb := &is.kb
+func (is *indexSearch) containsTimeRange(tr TimeRange) (bool, error) { // 存在date+metricid的索引，以date为前缀进行匹配，匹配到就证明索引中可以支持这个日期的查询
+	ts := &is.ts  // mergeset.TableSearch
+	kb := &is.kb  // 目的缓冲区
 
 	// Verify whether the maximum date in `ts` covers tr.MinTimestamp.
 	minDate := uint64(tr.MinTimestamp) / msecPerDay
-	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateToMetricID)
+	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateToMetricID)  // 索引是个包容的大杂烩，其中一种索引是日期
 	prefix := kb.B
 	kb.B = encoding.MarshalUint64(kb.B, minDate)
-	ts.Seek(kb.B)
+	ts.Seek(kb.B)  // kb.B 序列化了要搜索的原始KEY。 vm-storage的底层，是不是也可以理解为是一个KV存储？
 	if !ts.NextItem() {
 		if err := ts.Error(); err != nil {
 			return false, fmt.Errorf("error when searching for minDate=%d, prefix %q: %w", minDate, kb.B, err)
 		}
 		return false, nil
 	}
-	if !bytes.HasPrefix(ts.Item, prefix) {
+	if !bytes.HasPrefix(ts.Item, prefix) {  // 按照日期来做前缀匹配
 		// minDate exceeds max date from ts.
 		return false, nil
 	}
 	return true, nil
 }
 
-func (is *indexSearch) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int) ([]TSID, error) {
-	ok, err := is.containsTimeRange(tr)
+func (is *indexSearch) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int) ([]TSID, error) {  // 根据查询表达式，搜索tsid
+	ok, err := is.containsTimeRange(tr)  //时间范围是否有效的检查。 ?? 奇怪，这个检查为什么不提前呢
 	if err != nil {
 		return nil, err
 	}
@@ -2606,11 +2606,11 @@ const (
 	int64Max = int64((1 << 63) - 1)
 )
 
-func (is *indexSearch) storeDateMetricID(date, metricID uint64, mn *MetricName) error {
+func (is *indexSearch) storeDateMetricID(date, metricID uint64, mn *MetricName) error {  // 在KV中写入数据，说明某天有某个metricID
 	ii := getIndexItems()
 	defer putIndexItems(ii)
 
-	ii.B = is.marshalCommonPrefix(ii.B, nsPrefixDateToMetricID)
+	ii.B = is.marshalCommonPrefix(ii.B, nsPrefixDateToMetricID)  // 构造原始key
 	ii.B = encoding.MarshalUint64(ii.B, date)
 	ii.B = encoding.MarshalUint64(ii.B, metricID)
 	ii.Next()
@@ -2618,16 +2618,16 @@ func (is *indexSearch) storeDateMetricID(date, metricID uint64, mn *MetricName) 
 	// Create per-day inverted index entries for metricID.
 	kb := kbPool.Get()
 	defer kbPool.Put(kb)
-	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateTagToMetricIDs)
+	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateTagToMetricIDs)  // 构造索引的公共前缀
 	kb.B = encoding.MarshalUint64(kb.B, date)
-	ii.registerTagIndexes(kb.B, mn, metricID)
-	if err := is.db.tb.AddItems(ii.Items); err != nil {
+	ii.registerTagIndexes(kb.B, mn, metricID)  // 写入公共前缀
+	if err := is.db.tb.AddItems(ii.Items); err != nil {  // 写入日期+metricID的索引
 		return fmt.Errorf("cannot add per-day entires for metricID %d: %w", metricID, err)
 	}
 	return nil
 }
 
-func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID uint64) {
+func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID uint64) {  // 写入公共前缀
 	// Add index entry for MetricGroup -> MetricID
 	ii.B = append(ii.B, prefix...)
 	ii.B = marshalTagValue(ii.B, nil)

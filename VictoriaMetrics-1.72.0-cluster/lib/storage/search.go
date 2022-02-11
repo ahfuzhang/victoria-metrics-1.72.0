@@ -167,19 +167,19 @@ func (s *Search) reset() {
 //
 // MustClose must be called when the search is done.
 //
-// Init returns the upper bound on the number of found time series.
+// Init returns the upper bound on the number of found time series.  // maxMetrics 默认30万
 func (s *Search) Init(storage *Storage, tfss []*TagFilters, tr TimeRange, maxMetrics int, deadline uint64) int {
 	if s.needClosing {
 		logger.Panicf("BUG: missing MustClose call before the next call to Init")
 	}
 
 	s.reset()
-	s.tr = tr
-	s.tfss = tfss
-	s.deadline = deadline
+	s.tr = tr  // TimeRange
+	s.tfss = tfss  // TagFilters
+	s.deadline = deadline  // 客户端发过来的超时时间
 	s.needClosing = true
 
-	tsids, err := storage.searchTSIDs(tfss, tr, maxMetrics, deadline)
+	tsids, err := storage.searchTSIDs(tfss, tr, maxMetrics, deadline)  // 根据标签，搜索符合的TSID
 	if err == nil {
 		err = storage.prefetchMetricNames(tsids, deadline)
 	}

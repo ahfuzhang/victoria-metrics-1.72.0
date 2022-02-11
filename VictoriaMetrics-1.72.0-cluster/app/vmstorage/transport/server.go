@@ -149,7 +149,7 @@ var (
 )
 
 // RunVMSelect runs a server accepting connections from vmselect.
-func (s *Server) RunVMSelect() {
+func (s *Server) RunVMSelect() {  // 用于查询的服务
 	logger.Infof("accepting vmselect conns at %s", s.vmselectLN.Addr())
 	for {
 		c, err := s.vmselectLN.Accept()
@@ -206,7 +206,7 @@ func (s *Server) RunVMSelect() {
 			}()
 
 			logger.Infof("processing vmselect conn from %s", c.RemoteAddr())
-			if err := s.processVMSelectConn(bc); err != nil {
+			if err := s.processVMSelectConn(bc); err != nil {  // 处理查询请求
 				if s.isStopping() {
 					return
 				}
@@ -267,7 +267,7 @@ func (s *Server) processVMInsertConn(bc *handshake.BufferedConn) error {
 
 var vminsertMetricsRead = metrics.NewCounter("vm_vminsert_metrics_read_total")
 
-func (s *Server) processVMSelectConn(bc *handshake.BufferedConn) error {
+func (s *Server) processVMSelectConn(bc *handshake.BufferedConn) error {  // 处理查询请求
 	ctx := &vmselectRequestCtx{
 		bc:      bc,
 		sizeBuf: make([]byte, 8),
@@ -361,7 +361,7 @@ func (ctx *vmselectRequestCtx) readSearchQuery() error {
 	if err := ctx.readDataBufBytes(maxSearchQuerySize); err != nil {
 		return fmt.Errorf("cannot read searchQuery: %w", err)
 	}
-	tail, err := ctx.sq.Unmarshal(ctx.dataBuf)
+	tail, err := ctx.sq.Unmarshal(ctx.dataBuf)  // 解析查询请求
 	if err != nil {
 		return fmt.Errorf("cannot unmarshal SearchQuery: %w", err)
 	}
@@ -496,7 +496,7 @@ func (s *Server) processVMSelectRequest(ctx *vmselectRequestCtx) error {
 
 	switch rpcName {
 	case "search_v4":
-		return s.processVMSelectSearch(ctx)
+		return s.processVMSelectSearch(ctx)  // query_range 查询
 	case "searchMetricNames_v1":
 		return s.processVMSelectSearchMetricNames(ctx)
 	case "labelValuesOnTimeRange_v1":
@@ -1035,11 +1035,11 @@ func (s *Server) processVMSelectSearchMetricNames(ctx *vmselectRequestCtx) error
 	return nil
 }
 
-func (s *Server) processVMSelectSearch(ctx *vmselectRequestCtx) error {
+func (s *Server) processVMSelectSearch(ctx *vmselectRequestCtx) error {  // query_range 查询
 	vmselectSearchRequests.Inc()
 
 	// Read request.
-	if err := ctx.readSearchQuery(); err != nil {
+	if err := ctx.readSearchQuery(); err != nil {  // 解析查询请求
 		return err
 	}
 	fetchData, err := ctx.readBool()
@@ -1048,18 +1048,18 @@ func (s *Server) processVMSelectSearch(ctx *vmselectRequestCtx) error {
 	}
 
 	// Setup search.
-	tr := storage.TimeRange{
+	tr := storage.TimeRange{  // 查询数据的时间范围
 		MinTimestamp: ctx.sq.MinTimestamp,
 		MaxTimestamp: ctx.sq.MaxTimestamp,
 	}
-	if err := ctx.setupTfss(s.storage, tr); err != nil {
+	if err := ctx.setupTfss(s.storage, tr); err != nil {  // tags filter
 		return ctx.writeErrorMessage(err)
 	}
-	if err := checkTimeRange(s.storage, tr); err != nil {
+	if err := checkTimeRange(s.storage, tr); err != nil {  // 检查时间范围是否合法
 		return ctx.writeErrorMessage(err)
 	}
-	startTime := time.Now()
-	ctx.sr.Init(s.storage, ctx.tfss, tr, *maxMetricsPerSearch, ctx.deadline)
+	startTime := time.Now()  //   -search.maxSamplesPerSeries 默认30万
+	ctx.sr.Init(s.storage, ctx.tfss, tr, *maxMetricsPerSearch, ctx.deadline)  // storage.Search 对象初始化
 	indexSearchDuration.UpdateDuration(startTime)
 	defer ctx.sr.MustClose()
 	if err := ctx.sr.Error(); err != nil {
@@ -1099,7 +1099,7 @@ var indexSearchDuration = metrics.NewHistogram(`vm_index_search_duration_seconds
 
 // checkTimeRange returns true if the given tr is denied for querying.
 func checkTimeRange(s *storage.Storage, tr storage.TimeRange) error {
-	if !*denyQueriesOutsideRetention {
+	if !*denyQueriesOutsideRetention {  // 如果配置了不检查时间范围的有效性，就直接返回
 		return nil
 	}
 	retentionMsecs := s.RetentionMsecs()
