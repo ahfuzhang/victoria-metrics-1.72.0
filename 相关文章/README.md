@@ -6,6 +6,7 @@
 * [大铁憨(胡建洪)的知乎专栏](https://www.zhihu.com/people/datiehan/posts)
 * [blackbox:VictoriaMetrics阅读笔记](https://zhuanlan.zhihu.com/p/394961301)
 * [valyala: How VictoriaMetrics makes instant snapshots for multi-terabyte time series data](https://valyala.medium.com/how-victoriametrics-makes-instant-snapshots-for-multi-terabyte-time-series-data-e1f3fb0e0282)
+  - 翻译: [VictoriaMetrics如何快照数TB的时序数据](https://zhuanlan.zhihu.com/p/315583711)
 
 文章引用：https://valyala.medium.com/how-victoriametrics-makes-instant-snapshots-for-multi-terabyte-time-series-data-e1f3fb0e0282
 ```

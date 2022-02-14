@@ -26,7 +26,7 @@ type rawRow struct {  // 插入数据文件的原始数据格式
 	PrecisionBits uint8
 }
 
-type rawRowsMarshaler struct {
+type rawRowsMarshaler struct {  // 用于序列化 tsid + timestamp + value的数据
 	bsw blockStreamWriter
 
 	auxTimestamps  []int64  // 在连续多条TSID相同的情况下， timestamp的数据直接追加到这里
@@ -118,7 +118,7 @@ func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawR
 			rrm.auxFloatValues = append(rrm.auxFloatValues, r.Value)
 			continue
 		}
-
+		// 不同的TSID是不同的block。 这里有多少个TSID就会写多少个BLOCK
 		rrm.auxValues, scale = decimal.AppendFloatToDecimal(rrm.auxValues[:0], rrm.auxFloatValues)
 		tmpBlock.Init(tsid, rrm.auxTimestamps, rrm.auxValues, scale, precisionBits)  // 初始化block对象
 		rrm.bsw.WriteExternalBlock(tmpBlock, ph, &rowsMerged)

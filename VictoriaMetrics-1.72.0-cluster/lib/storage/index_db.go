@@ -458,7 +458,7 @@ func (is *indexSearch) GetOrCreateTSIDByName(dst *TSID, metricName []byte) error
 	// This should improve insertion performance for big batches
 	// of new time series.
 	if is.tsidByNameMisses < 100 {
-		err := is.getTSIDByMetricName(dst, metricName)
+		err := is.getTSIDByMetricName(dst, metricName)  // 查询的时候是否会顺表创建索引呢？
 		if err == nil {
 			is.tsidByNameMisses = 0
 			return nil
@@ -577,23 +577,23 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 }
 
 func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算得到新的TSID后，创建索引
-	// The order of index items is important.
-	// It guarantees index consistency.
+	// The order of index items is important.  // ???? 为什么呢？索引只是顺序的追加到一个大buffer，并未看见建立任何查找结构啊
+	// It guarantees index consistency.  // 它保证了索引的一致性
 
-	ii := getIndexItems()  // 从内存池获取 indexItems 对象
+	ii := getIndexItems()  // 从内存池获取 indexItems 对象. ?? 为什么这里没调用reset方法？
 	defer putIndexItems(ii)
 
 	// Create MetricName -> TSID index.
-	ii.B = append(ii.B, nsPrefixMetricNameToTSID)
-	ii.B = mn.Marshal(ii.B)
+	ii.B = append(ii.B, nsPrefixMetricNameToTSID)  // 这个字节表示索引的类型
+	ii.B = mn.Marshal(ii.B)  // 序列化 metric 的数据， 其实是把 mn.MetricGroup 拷贝进去
 	ii.B = append(ii.B, kvSeparatorChar)
 	ii.B = tsid.Marshal(ii.B)  // 上面把数据序列化为存储要求的格式
 	ii.Next()
 
-	// Create MetricID -> MetricName index.
+	// Create MetricID -> MetricName index.  // ??? 为什么同一个主键里面包含很多种不同的数据呢？
 	ii.B = marshalCommonPrefix(ii.B, nsPrefixMetricIDToMetricName, mn.AccountID, mn.ProjectID)
 	ii.B = encoding.MarshalUint64(ii.B, tsid.MetricID)
-	ii.B = mn.Marshal(ii.B)
+	ii.B = mn.Marshal(ii.B)  // ??? 同一个buffer里面，上面追加过的数据，又追加了一次……
 	ii.Next()
 
 	// Create MetricID -> TSID index.
@@ -602,15 +602,15 @@ func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算�
 	ii.B = tsid.Marshal(ii.B)
 	ii.Next()  // 为什么把几种不同格式的数据，放在同一个buffer呢？
 
-	prefix := kbPool.Get()
+	prefix := kbPool.Get()  // ByteBufferPool
 	prefix.B = marshalCommonPrefix(prefix.B[:0], nsPrefixTagToMetricIDs, mn.AccountID, mn.ProjectID)
-	ii.registerTagIndexes(prefix.B, mn, tsid.MetricID)
+	ii.registerTagIndexes(prefix.B, mn, tsid.MetricID)  // 建立了好几种不同类型的索引
 	kbPool.Put(prefix)
 
-	return db.tb.AddItems(ii.Items)
+	return db.tb.AddItems(ii.Items)  // 把多个索引放到 indexItem对象中，然后发给table对象
 }
 
-type indexItems struct {
+type indexItems struct {  // 相当于把所有的主键都集中在一起存放
 	B     []byte  //这是一个大数组，用于顺序的存放多个 time series的数据
 	Items [][]byte  // 这个结构引用上面的数据
 
@@ -624,7 +624,7 @@ func (ii *indexItems) reset() {
 }
 
 func (ii *indexItems) Next() {
-	ii.Items = append(ii.Items, ii.B[ii.start:])
+	ii.Items = append(ii.Items, ii.B[ii.start:])  //把当前游标追加的数据作为一个item，然后游标移动到下一个追加位置
 	ii.start = len(ii.B)
 }
 
@@ -2629,22 +2629,22 @@ func (is *indexSearch) storeDateMetricID(date, metricID uint64, mn *MetricName) 
 
 func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID uint64) {  // 写入公共前缀
 	// Add index entry for MetricGroup -> MetricID
-	ii.B = append(ii.B, prefix...)
+	ii.B = append(ii.B, prefix...)  // prefix 一般是 mn.AccountID, mn.ProjectID
 	ii.B = marshalTagValue(ii.B, nil)
-	ii.B = marshalTagValue(ii.B, mn.MetricGroup)
+	ii.B = marshalTagValue(ii.B, mn.MetricGroup)  // ??? 同样的 metricGroup 数据加了若干次，这是为什么呢
 	ii.B = encoding.MarshalUint64(ii.B, metricID)
-	ii.Next()
-	ii.addReverseMetricGroupIfNeeded(prefix, mn, metricID)
+	ii.Next()  // 追加为一个 item
+	ii.addReverseMetricGroupIfNeeded(prefix, mn, metricID)  // graphite 体系的特殊处理
 
 	// Add index entries for tags: tag -> MetricID
 	for _, tag := range mn.Tags {
 		ii.B = append(ii.B, prefix...)
 		ii.B = tag.Marshal(ii.B)
 		ii.B = encoding.MarshalUint64(ii.B, metricID)
-		ii.Next()
+		ii.Next()  // 每个label name + label value形成一个索引 item
 	}
 
-	// Add index entries for composite tags: MetricGroup+tag -> MetricID
+	// Add index entries for composite tags: MetricGroup+tag -> MetricID  // ??? 必须搞懂 MetricGroup 到底是什么
 	compositeKey := kbPool.Get()
 	for _, tag := range mn.Tags {
 		compositeKey.B = marshalCompositeTagKey(compositeKey.B[:0], mn.MetricGroup, tag.Key)
@@ -2652,7 +2652,7 @@ func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID
 		ii.B = marshalTagValue(ii.B, compositeKey.B)
 		ii.B = marshalTagValue(ii.B, tag.Value)
 		ii.B = encoding.MarshalUint64(ii.B, metricID)
-		ii.Next()
+		ii.Next()  // 看起来是建立了一堆符合索引
 	}
 	kbPool.Put(compositeKey)
 }

@@ -265,7 +265,7 @@ func (tb *table) ForceMergePartitions(partitionNamePrefix string) error {
 }
 
 // AddRows adds the given rows to the table tb.
-func (tb *table) AddRows(rows []rawRow) error {  // 插入数据
+func (tb *table) AddRows(rows []rawRow) error {  // 插入数据部分
 	if len(rows) == 0 {
 		return nil
 	}
@@ -303,7 +303,7 @@ func (tb *table) AddRows(rows []rawRow) error {  // 插入数据
 
 		// Fast path - add all the rows into the ptw.
 		ptw.pt.AddRows(rows)
-		tb.PutPartitions(ptws)
+		tb.PutPartitions(ptws)  //取消对分区的引用，通过减少引用计数来实现
 		return nil
 	}
 
@@ -359,7 +359,7 @@ func (tb *table) AddRows(rows []rawRow) error {  // 插入数据
 		if ptFound {
 			continue
 		}
-
+		// 如果每个月才一个分区，是不是要月份切换的时候，才会触发创建分区 ???
 		pt, err := createPartition(r.Timestamp, tb.smallPartitionsPath, tb.bigPartitionsPath, tb.getDeletedMetricIDs, tb.retentionMsecs)
 		if err != nil {
 			errors = append(errors, err)

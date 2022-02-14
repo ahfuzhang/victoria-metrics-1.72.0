@@ -1917,16 +1917,16 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 				j--
 				continue
 			}
-			if s.isSeriesCardinalityExceeded(r.TSID.MetricID, mr.MetricNameRaw) {
+			if s.isSeriesCardinalityExceeded(r.TSID.MetricID, mr.MetricNameRaw) {  //是否超过时间序列的基础。保障每小时+每天的time series在一定的范围内
 				// Skip the row, since the limit on the number of unique series has been exceeded.
 				j--
 				continue
 			}
-			s.putTSIDToCache(&r.TSID, mr.MetricNameRaw)
+			s.putTSIDToCache(&r.TSID, mr.MetricNameRaw)  // metric -> tsid 的 cache
 			prevTSID = r.TSID
 			prevMetricNameRaw = mr.MetricNameRaw
 		}
-		idb.putIndexSearch(is)
+		idb.putIndexSearch(is)  // 放回内存池
 		putPendingMetricRows(pmrs)
 		atomic.AddUint64(&s.slowRowInserts, slowInsertsCount)
 	}
@@ -2502,7 +2502,7 @@ func (s *Storage) getTSIDFromCache(dst *TSID, metricName []byte) bool {
 	return uintptr(len(buf)) == unsafe.Sizeof(*dst)
 }
 
-func (s *Storage) putTSIDToCache(tsid *TSID, metricName []byte) {
+func (s *Storage) putTSIDToCache(tsid *TSID, metricName []byte) {  // 创建索引后，再更新到cache
 	buf := (*[unsafe.Sizeof(*tsid)]byte)(unsafe.Pointer(tsid))[:]
 	s.tsidCache.Set(metricName, buf)
 }

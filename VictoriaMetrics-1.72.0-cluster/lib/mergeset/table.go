@@ -106,7 +106,7 @@ type Table struct {
 	// rawItems contains recently added items that haven't been converted to parts yet.
 	//
 	// rawItems aren't used in search for performance reasons
-	rawItems rawItemsShards  // 这个是干啥的？
+	rawItems rawItemsShards  // 还没合并到part的内存中的数据, 在time series的前后加上key的类型。通过分桶来减少锁的竞争
 
 	snapshotLock sync.RWMutex
 
@@ -126,10 +126,10 @@ type Table struct {
 }
 
 type rawItemsShards struct {  // 还未保存到part的数据
-	shardIdx uint32
+	shardIdx uint32  // 通过原子加来确定分桶，保障各个核操作不同的桶，减少竞争
 
 	// shards reduce lock contention when adding rows on multi-CPU systems.
-	shards []rawItemsShard  // 数组长度与CPU核数一致
+	shards []rawItemsShard  // 数组长度与CPU核数一致，通过分桶来减少桶的竞争
 }
 
 // The number of shards for rawItems per table.
@@ -143,7 +143,7 @@ func (riss *rawItemsShards) init() {
 	riss.shards = make([]rawItemsShard, rawItemsShardsPerTable)
 }
 
-func (riss *rawItemsShards) addItems(tb *Table, items [][]byte) error {
+func (riss *rawItemsShards) addItems(tb *Table, items [][]byte) error {  // items中包含了多个类型的索引数据
 	n := atomic.AddUint32(&riss.shardIdx, 1)  // 通过原子加来分散到不同的对象，避免锁的冲突
 	shards := riss.shards
 	idx := n % uint32(len(shards))
@@ -162,10 +162,10 @@ func (riss *rawItemsShards) Len() int {
 type rawItemsShard struct {  // 还未写到part的数据
 	mu            sync.Mutex
 	ibs           []*inmemoryBlock  // 存在多个 inmemoryBlock对象
-	lastFlushTime uint64
+	lastFlushTime uint64  // 记录最后一次flush的时间
 }
 
-func (ris *rawItemsShard) Len() int {
+func (ris *rawItemsShard) Len() int {  //总数量是每个 inmemoryBlock中的数量的总和
 	ris.mu.Lock()
 	n := 0
 	for _, ib := range ris.ibs {
@@ -176,7 +176,7 @@ func (ris *rawItemsShard) Len() int {
 }
 
 func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {  // 未保存在part中的数据，先写入这里
-	var err error
+	var err error   // items中包含了多个类型的索引数据
 	var blocksToFlush []*inmemoryBlock
 
 	ris.mu.Lock()  // 加锁避免并发的影响
@@ -467,7 +467,7 @@ func (tb *Table) UpdateMetrics(m *TableMetrics) {
 }
 
 // AddItems adds the given items to the tb.
-func (tb *Table) AddItems(items [][]byte) error {  // 把原始KEY写入底层的KV中
+func (tb *Table) AddItems(items [][]byte) error {  // 把原始KEY写入底层的KV中，items中包含了多个类型的索引数据
 	if err := tb.rawItems.addItems(tb, items); err != nil {
 		return fmt.Errorf("cannot insert data into %q: %w", tb.path, err)
 	}

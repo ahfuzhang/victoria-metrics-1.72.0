@@ -15,8 +15,8 @@ var (
 )
 
 var (
-	allowedMemory   int
-	remainingMemory int
+	allowedMemory   int  //128GB的时候，设置为120
+	remainingMemory int  //128GB的时候，这个为8GB
 )
 
 var once sync.Once

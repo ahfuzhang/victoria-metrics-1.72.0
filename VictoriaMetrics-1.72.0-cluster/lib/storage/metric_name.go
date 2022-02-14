@@ -40,7 +40,7 @@ func (tag *Tag) Equal(t *Tag) bool {
 }
 
 // Marshal appends marshaled tag to dst and returns the result.
-func (tag *Tag) Marshal(dst []byte) []byte {
+func (tag *Tag) Marshal(dst []byte) []byte {  // 对label name + label value进行序列化
 	dst = marshalTagValue(dst, tag.Key)
 	dst = marshalTagValue(dst, tag.Value)
 	return dst
@@ -71,19 +71,19 @@ func marshalTagValueNoTrailingTagSeparator(dst, src []byte) []byte {
 	return dst[:len(dst)-1]
 }
 
-func marshalTagValue(dst, src []byte) []byte {
+func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
 	n1 := bytes.IndexByte(src, escapeChar)
 	n2 := bytes.IndexByte(src, tagSeparatorChar)
 	n3 := bytes.IndexByte(src, kvSeparatorChar)
 	if n1 < 0 && n2 < 0 && n3 < 0 {
 		// Fast path.
-		dst = append(dst, src...)
+		dst = append(dst, src...)  // 如果目的缓冲区中，还没有 mn.MetricGroup 的内容，那么直接把 mn.MetricGroup 追加进去，就完成了序列化
 		dst = append(dst, tagSeparatorChar)
 		return dst
 	}
 
 	// Slow path.
-	for _, ch := range src {
+	for _, ch := range src {  //遍历 mn.MetricGroup 中的每个byte
 		switch ch {
 		case escapeChar:
 			dst = append(dst, escapeChar, '0')
@@ -92,7 +92,7 @@ func marshalTagValue(dst, src []byte) []byte {
 		case kvSeparatorChar:
 			dst = append(dst, escapeChar, '2')
 		default:
-			dst = append(dst, ch)
+			dst = append(dst, ch)  // 把 mn.MetricGroup 的某几个字符进行转换后，写入目的缓冲区
 		}
 	}
 
@@ -137,7 +137,7 @@ type MetricName struct {
 	AccountID uint32
 	ProjectID uint32
 
-	MetricGroup []byte
+	MetricGroup []byte  // ??? 这个是干嘛用的？
 
 	// Tags are optional. They must be sorted by tag Key for canonical view.
 	// Use sortTags method.

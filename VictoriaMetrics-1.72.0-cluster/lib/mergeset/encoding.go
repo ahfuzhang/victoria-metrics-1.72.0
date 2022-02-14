@@ -112,7 +112,7 @@ func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数
 // Add adds x to the end of ib.
 //
 // false is returned if x isn't added to ib due to block size contraints.
-func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据，前后各加了1字节
+func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据，前后各加了1字节； x也可能多包含了多种索引的 indexItem 中的结构
 	data := ib.data  // 没看懂这个写法？ 是为了避免并发带来影响？还是为了编译期优化代码？
 	if len(x)+len(data) > maxInmemoryBlockSize {
 		return false
@@ -122,7 +122,7 @@ func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time
 		data = bytesutil.Resize(data, maxInmemoryBlockSize)[:dataLen]
 	}
 	dataLen := len(data)
-	data = append(data, x...)  // 在大数组中追加, add的过程是无需的。在合并的时候，会进行排序
+	data = append(data, x...)  // 在大数组中追加, add的过程是无序的。在合并的时候，会进行排序
 	ib.items = append(ib.items, Item{  // 用 items 数组说明time series在大数组中的位置
 		Start: uint32(dataLen),
 		End:   uint32(len(data)),
