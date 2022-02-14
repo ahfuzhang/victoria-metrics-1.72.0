@@ -28,15 +28,15 @@ type blockStreamReader struct {
 	// Use io.Reader type for timestampsReader and valuesReader
 	// in order to remove I2I conversion in readBlock
 	// when passing them to fs.ReadFullData
-	timestampsReader io.Reader
-	valuesReader     io.Reader
+	timestampsReader io.Reader  // timestamps.bin
+	valuesReader     io.Reader  // values.bin
 
-	indexReader filestream.ReadCloser
+	indexReader filestream.ReadCloser  // index.bin
 
-	mrs []metaindexRow
+	mrs []metaindexRow  // 从meraindex.bin解析得到的数据
 
 	// Points the current mr from mrs.
-	mr *metaindexRow
+	mr *metaindexRow  // 技巧：把函数中的临时变量作为对象的成员变量，杜绝了栈逃逸，减少了GC的压力
 
 	// The total number of rows read so far.
 	rowsCount uint64
@@ -131,10 +131,10 @@ func (bsr *blockStreamReader) InitFromInmemoryPart(mp *inmemoryPart) {
 //
 // Files in the part are always read without OS cache pollution,
 // since they are usually deleted after the merge.
-func (bsr *blockStreamReader) InitFromFilePart(path string) error {
+func (bsr *blockStreamReader) InitFromFilePart(path string) error {  // 创建part目录下的文件
 	bsr.reset()
 
-	path = filepath.Clean(path)
+	path = filepath.Clean(path)  // ??? inmemoryPart 没有路径会怎么样？
 
 	if err := bsr.ph.ParseFromPath(path); err != nil {
 		return fmt.Errorf("cannot parse path to part: %w", err)

@@ -97,7 +97,7 @@ func (bsw *blockStreamWriter) InitFromInmemoryPart(mp *inmemoryPart) {
 
 // InitFromFilePart initializes bsw from a file-based part on the given path.
 //
-// The bsw doesn't pollute OS page cache if nocache is set.
+// The bsw doesn't pollute OS page cache if nocache is set.  // 数据先放到 tmp 的临时目录里面去
 func (bsw *blockStreamWriter) InitFromFilePart(path string, nocache bool, compressLevel int) error {
 	path = filepath.Clean(path)
 
@@ -152,7 +152,7 @@ func (bsw *blockStreamWriter) InitFromFilePart(path string, nocache bool, compre
 	bsw.indexWriter = indexFile
 	bsw.metaindexWriter = metaindexFile
 
-	bsw.assertWriteClosers()
+	bsw.assertWriteClosers()  //todo: 这种debug代码不应该出现在这里
 
 	return nil
 }

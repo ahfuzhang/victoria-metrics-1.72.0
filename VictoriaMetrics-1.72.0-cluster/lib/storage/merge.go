@@ -19,7 +19,7 @@ func mergeBlockStreams(ph *partHeader, bsw *blockStreamWriter, bsrs []*blockStre
 	dmis *uint64set.Set, retentionDeadline int64, rowsMerged, rowsDeleted *uint64) error {
 	ph.Reset()
 
-	bsm := bsmPool.Get().(*blockStreamMerger)
+	bsm := bsmPool.Get().(*blockStreamMerger)  //todo: 应该可以封装mergeBlockStreamsInternal为blockStreamMerger对象的方法
 	bsm.Init(bsrs)
 	err := mergeBlockStreamsInternal(ph, bsw, bsm, stopCh, dmis, retentionDeadline, rowsMerged, rowsDeleted)
 	bsm.reset()
@@ -46,7 +46,7 @@ func mergeBlockStreamsInternal(ph *partHeader, bsw *blockStreamWriter, bsm *bloc
 	defer putBlock(pendingBlock)
 	tmpBlock := getBlock()
 	defer putBlock(tmpBlock)
-	for bsm.NextBlock() {
+	for bsm.NextBlock() {  //逐个读取block
 		select {
 		case <-stopCh:
 			return errForciblyStopped

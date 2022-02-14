@@ -124,7 +124,7 @@ type partition struct {
 	smallMergeNeedFreeDiskSpace uint64
 	bigMergeNeedFreeDiskSpace   uint64
 
-	mergeIdx uint64  // 以UnixNano来初始化
+	mergeIdx uint64  // 以UnixNano来初始化，用于产生合并的任务ID
 
 	smallPartsPath string  // 小 parts 的目录
 	bigPartsPath   string  // 大 parts 的目录。大的parts，压缩比更高
@@ -815,7 +815,7 @@ func (pt *partition) mergePartsOptimal(pws []*partWrapper, stopCh <-chan struct{
 	if len(pws) == 0 {
 		return nil
 	}
-	if err := pt.mergeParts(pws, stopCh); err != nil {
+	if err := pt.mergeParts(pws, stopCh); err != nil {  // 最后一组
 		return fmt.Errorf("cannot merge %d parts: %w", len(pws), err)
 	}
 	return nil
@@ -1110,7 +1110,7 @@ func getMinDedupInterval(pws []*partWrapper) int64 {
 // Merging is immediately stopped if stopCh is closed.
 //
 // All the parts inside pws must have isInMerge field set to true.
-func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) error {
+func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) error {  //合并最多15个 inmemoryPart
 	if len(pws) == 0 {  // 合并 inmemoryPart， 15个为一组
 		// Nothing to merge.
 		return errNothingToMerge
@@ -1126,12 +1126,12 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 			putBlockStreamReader(bsr)
 		}
 	}()
-	for _, pw := range pws {
+	for _, pw := range pws {  // 创建 BlockStreamReader 对象
 		bsr := getBlockStreamReader()
 		if pw.mp != nil {
 			bsr.InitFromInmemoryPart(pw.mp)
 		} else {
-			if err := bsr.InitFromFilePart(pw.p.path); err != nil {
+			if err := bsr.InitFromFilePart(pw.p.path); err != nil {  //打开目录下的四个 .bin 文件
 				return fmt.Errorf("cannot open source part for merging: %w", err)
 			}
 		}
@@ -1143,10 +1143,10 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	outBlocksCount := uint64(0)
 	for _, pw := range pws {
 		outSize += pw.p.size
-		outRowsCount += pw.p.ph.RowsCount
-		outBlocksCount += pw.p.ph.BlocksCount
+		outRowsCount += pw.p.ph.RowsCount      //猜测这个是总的data point的数量
+		outBlocksCount += pw.p.ph.BlocksCount  // 一个tsid一个block，这里应该大于等于TSID的数量
 	}
-	isBigPart := outSize > maxSmallPartSize()
+	isBigPart := outSize > maxSmallPartSize()  // 一般来说，超过1MB认为是big part
 	nocache := isBigPart
 
 	// Prepare BlockStreamWriter for destination part.
@@ -1155,11 +1155,11 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 		ptPath = pt.bigPartsPath
 	}
 	ptPath = filepath.Clean(ptPath)
-	mergeIdx := pt.nextMergeIdx()
+	mergeIdx := pt.nextMergeIdx()  // 产生任务ID
 	tmpPartPath := fmt.Sprintf("%s/tmp/%016X", ptPath, mergeIdx)
-	bsw := getBlockStreamWriter()
-	compressLevel := getCompressLevelForRowsCount(outRowsCount, outBlocksCount)
-	if err := bsw.InitFromFilePart(tmpPartPath, nocache, compressLevel); err != nil {
+	bsw := getBlockStreamWriter()  // 从对象池分配 writer对象
+	compressLevel := getCompressLevelForRowsCount(outRowsCount, outBlocksCount)  //数据越多，压缩级别越高
+	if err := bsw.InitFromFilePart(tmpPartPath, nocache, compressLevel); err != nil {  // 在临时目录创建各个 .bin 文件
 		return fmt.Errorf("cannot create destination part %q: %w", tmpPartPath, err)
 	}
 
@@ -1180,7 +1180,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	retentionDeadline := timestampFromTime(startTime) - pt.retentionMsecs
 	err := mergeBlockStreams(&ph, bsw, bsrs, stopCh, dmis, retentionDeadline, rowsMerged, rowsDeleted)
 	if isBigPart {
-		atomic.AddUint64(&pt.activeBigMerges, ^uint64(0))
+		atomic.AddUint64(&pt.activeBigMerges, ^uint64(0))  //减1， 等同于 atomic.AddInt64(&pt.activeBigMerges, -1)
 	} else {
 		atomic.AddUint64(&pt.activeSmallMerges, ^uint64(0))
 	}
@@ -1205,7 +1205,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	var bb bytesutil.ByteBuffer
 	for _, pw := range pws {
 		if pw.mp == nil {
-			fmt.Fprintf(&bb, "%s\n", pw.p.path)
+			fmt.Fprintf(&bb, "%s\n", pw.p.path)  //所有的路径，写成一个文本文件
 		}
 	}
 	dstPartPath := ""
@@ -1215,15 +1215,15 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 		dstPartPath = ph.Path(ptPath, mergeIdx)
 	}
 	fmt.Fprintf(&bb, "%s -> %s\n", tmpPartPath, dstPartPath)
-	txnPath := fmt.Sprintf("%s/txn/%016X", ptPath, mergeIdx)
-	if err := fs.WriteFileAtomically(txnPath, bb.B); err != nil {
+	txnPath := fmt.Sprintf("%s/txn/%016X", ptPath, mergeIdx)  //事务文件夹
+	if err := fs.WriteFileAtomically(txnPath, bb.B); err != nil {  // 在事务文件夹写入一个文本文件，内容是多个文件的完整路径
 		return fmt.Errorf("cannot create transaction file %q: %w", txnPath, err)
 	}
 
 	// Run the created transaction.
 	if err := runTransaction(&pt.snapshotLock, pt.smallPartsPath, pt.bigPartsPath, txnPath); err != nil {
 		return fmt.Errorf("cannot execute transaction %q: %w", txnPath, err)
-	}
+	}  //todo: 我觉得有点多余。VM连WAL都没有，搞啥事务？可靠性不是在这里来保障的
 
 	var newPW *partWrapper
 	var newPSize uint64
@@ -1251,7 +1251,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	removedSmallParts := 0
 	removedBigParts := 0
 	pt.partsLock.Lock()
-	pt.smallParts, removedSmallParts = removeParts(pt.smallParts, m, false)
+	pt.smallParts, removedSmallParts = removeParts(pt.smallParts, m, false)  //合并操作做完后，修改part对象
 	pt.bigParts, removedBigParts = removeParts(pt.bigParts, m, true)
 	if newPW != nil {
 		if isBigPart {
@@ -1279,7 +1279,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	return nil
 }
 
-func getCompressLevelForRowsCount(rowsCount, blocksCount uint64) int {
+func getCompressLevelForRowsCount(rowsCount, blocksCount uint64) int {  //数据越多，压缩级别越高
 	avgRowsPerBlock := rowsCount / blocksCount
 	if avgRowsPerBlock <= 200 {
 		return -1
@@ -1299,7 +1299,7 @@ func getCompressLevelForRowsCount(rowsCount, blocksCount uint64) int {
 	return 5
 }
 
-func (pt *partition) nextMergeIdx() uint64 {
+func (pt *partition) nextMergeIdx() uint64 {  // 通过原子加，得到下次合并的唯一任务ID
 	return atomic.AddUint64(&pt.mergeIdx, 1)
 }
 
