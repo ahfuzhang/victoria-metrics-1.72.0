@@ -1296,7 +1296,7 @@ func getCompressLevelForRowsCount(rowsCount, blocksCount uint64) int {  //数据
 	if avgRowsPerBlock <= 4000 {
 		return 4
 	}
-	return 5
+	return 5  // 压缩级别是 -5 ~ 5 吗？
 }
 
 func (pt *partition) nextMergeIdx() uint64 {  // 通过原子加，得到下次合并的唯一任务ID

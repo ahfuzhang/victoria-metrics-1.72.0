@@ -1,3 +1,13 @@
+## valyala的文章
+* [VictoriaMetrics: achieving better compression than Gorilla for time series data](https://faun.pub/victoriametrics-achieving-better-compression-for-time-series-data-than-gorilla-317bc1f95932)
+* [valyala: How VictoriaMetrics makes instant snapshots for multi-terabyte time series data](https://valyala.medium.com/how-victoriametrics-makes-instant-snapshots-for-multi-terabyte-time-series-data-e1f3fb0e0282)
+  - 翻译: [VictoriaMetrics如何快照数TB的时序数据](https://zhuanlan.zhihu.com/p/315583711)
+* [How ClickHouse Inspired Us to Build a High Performance Time Series Database](https://altinity.com/wp-content/uploads/2021/11/How-ClickHouse-Inspired-Us-to-Build-a-High-Performance-Time-Series-Database.pdf)
+* [valyala:Go optimizations in VictoriaMetrics](https://docs.google.com/presentation/d/1k7OjHvxTHA7669MFwsNTCx8hII-a8lNvpmQetLxmrEU/edit#slide=id.g623cf286f0_0_571)
+
+
+## 其他相关文章
+
 * [大铁憨(胡建洪):浅析下开源时序数据库VictoriaMetrics的存储机制](https://zhuanlan.zhihu.com/p/368912946)
 * [介绍一个golang库：fastcache](https://mp.weixin.qq.com/s?__biz=MzI0NzM3NDAyNQ==&mid=2247483766&idx=1&sn=5b941a3c2211eff104064d595c04e7df&chksm=e9b048d0dec7c1c687e639928c8ff3e299194e8ff1ed8ad5d0eb2258468eb48ead77e273e0d6&token=1570151211&lang=zh_CN#rd)
 * [介绍一个golang库：zstd](https://www.cnblogs.com/ahfuzhang/p/15842350.html)
@@ -5,8 +15,11 @@
 * [ahfuzhang随笔分类 - VictoriaMetrics](https://www.cnblogs.com/ahfuzhang/category/2076800.html)
 * [大铁憨(胡建洪)的知乎专栏](https://www.zhihu.com/people/datiehan/posts)
 * [blackbox:VictoriaMetrics阅读笔记](https://zhuanlan.zhihu.com/p/394961301)
-* [valyala: How VictoriaMetrics makes instant snapshots for multi-terabyte time series data](https://valyala.medium.com/how-victoriametrics-makes-instant-snapshots-for-multi-terabyte-time-series-data-e1f3fb0e0282)
-  - 翻译: [VictoriaMetrics如何快照数TB的时序数据](https://zhuanlan.zhihu.com/p/315583711)
+* [单机 20 亿指标，知乎 Graphite 极致优化！](https://github.com/zhihu/promate/wiki/%E5%8D%95%E6%9C%BA-20-%E4%BA%BF%E6%8C%87%E6%A0%87%EF%BC%8C%E7%9F%A5%E4%B9%8E-Graphite-%E6%9E%81%E8%87%B4%E4%BC%98%E5%8C%96%EF%BC%81)
+* [ClickHouse for Time-Series](https://www.percona.com/sites/default/files/ple19-slides/day1-pm/clickhouse-for-timeseries.pdf)
+
+----
+
 
 文章引用：https://valyala.medium.com/how-victoriametrics-makes-instant-snapshots-for-multi-terabyte-time-series-data-e1f3fb0e0282
 ```
