@@ -17,6 +17,11 @@
 * [blackbox:VictoriaMetrics阅读笔记](https://zhuanlan.zhihu.com/p/394961301)
 * [单机 20 亿指标，知乎 Graphite 极致优化！](https://github.com/zhihu/promate/wiki/%E5%8D%95%E6%9C%BA-20-%E4%BA%BF%E6%8C%87%E6%A0%87%EF%BC%8C%E7%9F%A5%E4%B9%8E-Graphite-%E6%9E%81%E8%87%B4%E4%BC%98%E5%8C%96%EF%BC%81)
 * [ClickHouse for Time-Series](https://www.percona.com/sites/default/files/ple19-slides/day1-pm/clickhouse-for-timeseries.pdf)
+* [Victoria Metrics 索引写入流程](https://juejin.cn/post/6854573222373900301)
+
+### clickhouse
+* [Overview of ClickHouse Architecture](https://clickhouse.com/docs/en/development/architecture/#merge-tree)
+* [MergeTree](https://clickhouse.com/docs/zh/engines/table-engines/mergetree-family/mergetree/)
 
 ----
 

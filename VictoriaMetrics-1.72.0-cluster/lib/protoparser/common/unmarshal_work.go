@@ -10,7 +10,7 @@ import (
 // ScheduleUnmarshalWork schedules uw to run in the worker pool.
 //
 // It is expected that StartUnmarshalWorkers is already called.
-func ScheduleUnmarshalWork(uw UnmarshalWork) {
+func ScheduleUnmarshalWork(uw UnmarshalWork) {  //请求入队
 	unmarshalWorkCh <- uw
 }
 
@@ -31,8 +31,8 @@ func StartUnmarshalWorkers() {
 	for i := 0; i < gomaxprocs; i++ {
 		go func() {
 			defer unmarshalWorkersWG.Done()
-			for uw := range unmarshalWorkCh {
-				uw.Unmarshal()
+			for uw := range unmarshalWorkCh {  //从channel消费数据
+				uw.Unmarshal()  //启动与CPU核数相等的协程来做反序列化
 			}
 		}()
 	}

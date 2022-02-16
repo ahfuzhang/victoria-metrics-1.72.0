@@ -95,7 +95,7 @@ func (ib *inmemoryBlock) updateCommonPrefix() {  // 找出block中所有time ser
 	ib.commonPrefix = append(ib.commonPrefix[:0], cp...)
 }
 
-func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数据。找到两个time series的最大的公共头。这个方法有点蠢……
+func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数据。找到两个time series的最大的公共头。
 	i := 0
 	if len(a) > len(b) {
 		for i < len(b) && a[i] == b[i] {
@@ -157,7 +157,7 @@ func (ib *inmemoryBlock) sort() {
 
 // storageBlock represents a block of data on the storage.
 type storageBlock struct {  // items.bin, lens.bin反序列化后的内容
-	itemsData []byte
+	itemsData []byte  // Sorted String Tables （SSTables）
 	lensData  []byte
 }
 

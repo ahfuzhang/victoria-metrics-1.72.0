@@ -5,14 +5,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
-	"github.com/VictoriaMetrics/fastcache"
 )
 
 // Cache modes.
 const (
-	split     = 0
+	split     = 0  //这个模式是什么意思？？？
 	switching = 1
 	whole     = 2
 )
@@ -216,7 +217,7 @@ func (c *Cache) Stop() {
 }
 
 // Reset resets the cache.
-func (c *Cache) Reset() {
+func (c *Cache) Reset() {  //清空整个cache   ??? 难道不是很危险吗
 	prev := c.prev.Load().(*fastcache.Cache)
 	prev.Reset()
 	curr := c.curr.Load().(*fastcache.Cache)

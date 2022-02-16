@@ -74,13 +74,13 @@ type Storage struct {
 	dailySeriesLimiter  *bloomfilter.Limiter
 
 	// tsidCache is MetricName -> TSID cache.
-	tsidCache *workingsetcache.Cache  // fastcache
+	tsidCache *workingsetcache.Cache  // fastcache，插入数据的时候，触发这个缓存更新
 
 	// metricIDCache is MetricID -> TSID cache.
-	metricIDCache *workingsetcache.Cache  // fastcache
+	metricIDCache *workingsetcache.Cache  // fastcache  查询的时候触发更新
 
 	// metricNameCache is MetricID -> MetricName cache.
-	metricNameCache *workingsetcache.Cache  // fastcache
+	metricNameCache *workingsetcache.Cache  // fastcache  查询的时候触发更新
 
 	// dateMetricIDCache is (Date, MetricID) cache.
 	dateMetricIDCache *dateMetricIDCache  // 记录 date+metricID 这个类型数据的缓存
@@ -651,7 +651,7 @@ func (s *Storage) retentionWatcher() {
 		case <-s.stop:
 			return
 		case <-time.After(d):
-			s.mustRotateIndexDB()
+			s.mustRotateIndexDB()  //按照对齐后的未来四小时来执行，每四小时切换一次索引
 		}
 	}
 }
@@ -704,11 +704,11 @@ func (s *Storage) nextDayMetricIDsUpdater() {
 	}
 }
 
-func (s *Storage) mustRotateIndexDB() {
+func (s *Storage) mustRotateIndexDB() {  // indexdb切换
 	// Create new indexdb table.
-	newTableName := nextIndexDBTableName()
+	newTableName := nextIndexDBTableName()  // 16字节十六进制字符串，uint64值的indexdb名称
 	idbNewPath := s.path + "/indexdb/" + newTableName
-	idbNew, err := openIndexDB(idbNewPath, s)
+	idbNew, err := openIndexDB(idbNewPath, s)  //在新路径创建indexdb
 	if err != nil {
 		logger.Panicf("FATAL: cannot create new indexDB at %q: %s", idbNewPath, err)
 	}
@@ -716,7 +716,7 @@ func (s *Storage) mustRotateIndexDB() {
 	// Drop extDB
 	idbCurr := s.idb()
 	idbCurr.doExtDB(func(extDB *indexDB) {
-		extDB.scheduleToDrop()
+		extDB.scheduleToDrop()  // 把 -4 ~ -8小时的索引目录丢掉
 	})
 	idbCurr.SetExtDB(nil)
 
@@ -728,7 +728,7 @@ func (s *Storage) mustRotateIndexDB() {
 	fs.MustSyncPath(s.path)
 
 	// Flush tsidCache, so idbNew can be populated with fresh data.
-	s.resetAndSaveTSIDCache()
+	s.resetAndSaveTSIDCache()  //	清空缓存
 
 	// Flush dateMetricIDCache, so idbNew can be populated with fresh data.
 	s.dateMetricIDCache.Reset()
@@ -740,8 +740,8 @@ func (s *Storage) mustRotateIndexDB() {
 }
 
 func (s *Storage) resetAndSaveTSIDCache() {
-	s.tsidCache.Reset()
-	s.mustSaveCache(s.tsidCache, "MetricName->TSID", "metricName_tsid")
+	s.tsidCache.Reset()  // 这个缓存全部清空了，难道不是很危险吗？
+	s.mustSaveCache(s.tsidCache, "MetricName->TSID", "metricName_tsid")  //??? 看不懂，为什么不save以后再清空？
 }
 
 // MustClose closes the storage.
@@ -1064,12 +1064,12 @@ func (s *Storage) mustSaveCache(c *workingsetcache.Cache, info, name string) {
 }
 
 // saveCacheLock prevents from data races when multiple concurrent goroutines save the same cache.
-var saveCacheLock sync.Mutex
+var saveCacheLock sync.Mutex  //全局锁，用于缓存落地的时候使用
 
-func nextRetentionDuration(retentionMsecs int64) time.Duration {
+func nextRetentionDuration(retentionMsecs int64) time.Duration {  //返回对齐后的未来四小时的时间点
 	// Round retentionMsecs to days. This guarantees that per-day inverted index works as expected.
-	retentionMsecs = ((retentionMsecs + msecPerDay - 1) / msecPerDay) * msecPerDay
-	t := time.Now().UnixNano() / 1e6
+	retentionMsecs = ((retentionMsecs + msecPerDay - 1) / msecPerDay) * msecPerDay  //按照24小时对齐
+	t := time.Now().UnixNano() / 1e6  // unix timestamp 的 毫秒数
 	deadline := ((t + retentionMsecs - 1) / retentionMsecs) * retentionMsecs
 	// Schedule the deadline to +4 hours from the next retention period start.
 	// This should prevent from possible double deletion of indexdb
@@ -2531,7 +2531,7 @@ func (s *Storage) openIndexDBTables(path string) (curr, prev *indexDB, err error
 			continue
 		}
 		tableName := fi.Name()
-		if !indexDBTableNameRegexp.MatchString(tableName) {
+		if !indexDBTableNameRegexp.MatchString(tableName) {  //合法的目录名，16个字符
 			// Skip invalid directories.
 			continue
 		}
@@ -2553,7 +2553,7 @@ func (s *Storage) openIndexDBTables(path string) (curr, prev *indexDB, err error
 	// Invariant: len(tableNames) >= 2
 
 	// Remove all the tables except two last tables.
-	for _, tn := range tableNames[:len(tableNames)-2] {  // 从多个目录中，选择最新的两个目录
+	for _, tn := range tableNames[:len(tableNames)-2] {  // 从多个目录中，选择最新的两个目录。其他的就删除掉
 		pathToRemove := path + "/" + tn
 		logger.Infof("removing obsolete indexdb dir %q...", pathToRemove)
 		fs.MustRemoveAll(pathToRemove)
@@ -2563,7 +2563,7 @@ func (s *Storage) openIndexDBTables(path string) (curr, prev *indexDB, err error
 	// Persist changes on the file system.
 	fs.MustSyncPath(path)
 
-	// Open the last two tables.
+	// Open the last two tables.  // ??? 为什么呢？ 为什么最后两个才是有效的呢？
 	currPath := path + "/" + tableNames[len(tableNames)-1]
 
 	curr, err = openIndexDB(currPath, s)  // 打开当前时间段的目录
@@ -2582,7 +2582,7 @@ func (s *Storage) openIndexDBTables(path string) (curr, prev *indexDB, err error
 
 var indexDBTableNameRegexp = regexp.MustCompile("^[0-9A-F]{16}$")
 
-func nextIndexDBTableName() string {
+func nextIndexDBTableName() string {  //在启动时间的基础上，原子加
 	n := atomic.AddUint64(&indexDBTableIdx, 1)
 	return fmt.Sprintf("%016X", n)
 }

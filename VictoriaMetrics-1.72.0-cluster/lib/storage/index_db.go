@@ -27,27 +27,27 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/workingsetcache"
 )
 
-const (
+const (  //非常重要。以下应该是索引的类型。整个mergeset中存放了下列七种索引
 	// Prefix for MetricName->TSID entries.
-	nsPrefixMetricNameToTSID = 0
+	nsPrefixMetricNameToTSID = 0  // func (db *indexDB) createIndexes 中使用了此类型
 
 	// Prefix for Tag->MetricID entries.
-	nsPrefixTagToMetricIDs = 1
+	nsPrefixTagToMetricIDs = 1  // func (db *indexDB) createIndexes 中使用了此类型
 
 	// Prefix for MetricID->TSID entries.
-	nsPrefixMetricIDToTSID = 2
+	nsPrefixMetricIDToTSID = 2  // func (db *indexDB) createIndexes 中使用了此类型
 
 	// Prefix for MetricID->MetricName entries.
-	nsPrefixMetricIDToMetricName = 3
+	nsPrefixMetricIDToMetricName = 3  // func (db *indexDB) createIndexes 中使用了此类型
 
 	// Prefix for deleted MetricID entries.
 	nsPrefixDeletedMetricID = 4
 
 	// Prefix for Date->MetricID entries.
-	nsPrefixDateToMetricID = 5
+	nsPrefixDateToMetricID = 5  // func (is *indexSearch) storeDateMetricID 中使用了此类型
 
 	// Prefix for (Date,Tag)->MetricID entries.
-	nsPrefixDateTagToMetricIDs = 6
+	nsPrefixDateTagToMetricIDs = 6  // func (is *indexSearch) storeDateMetricID 中使用了此类型
 )
 
 // indexDB represents an index db.
@@ -130,7 +130,7 @@ func openIndexDB(path string, s *Storage) (*indexDB, error) {  // 选取其中�
 const noDeadline = 1<<64 - 1
 
 // IndexDBMetrics contains essential metrics for indexDB.
-type IndexDBMetrics struct {
+type IndexDBMetrics struct {  //这个结构用来做监控上报的。自监控
 	TagFiltersCacheSize         uint64
 	TagFiltersCacheSizeBytes    uint64
 	TagFiltersCacheSizeMaxBytes uint64

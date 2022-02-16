@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/consts"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/encoding"
@@ -13,7 +15,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/protoparser/common"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 // ParseStream parses data sent from vminsert to bc and calls callback for parsed rows.
@@ -57,7 +58,7 @@ func ParseStream(bc *handshake.BufferedConn, callback func(rows []storage.Metric
 		}
 		blocksRead.Inc()
 		wg.Add(1)
-		common.ScheduleUnmarshalWork(uw)
+		common.ScheduleUnmarshalWork(uw)  //解析好请求后，把请求丢到队列中
 	}
 }
 
