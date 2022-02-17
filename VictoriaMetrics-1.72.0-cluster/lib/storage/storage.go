@@ -158,7 +158,7 @@ func OpenStorage(path string, retentionMsecs int64, maxHourlySeries, maxDailySer
 		return nil, fmt.Errorf("cannot determine absolute path for %q: %w", path, err)
 	}
 	if retentionMsecs <= 0 {
-		retentionMsecs = maxRetentionMsecs
+		retentionMsecs = maxRetentionMsecs  // 最大支持100年
 	}
 	if retentionMsecs > maxRetentionMsecs {
 		retentionMsecs = maxRetentionMsecs
@@ -277,7 +277,7 @@ func OpenStorage(path string, retentionMsecs int64, maxHourlySeries, maxDailySer
 
 	s.startCurrHourMetricIDsUpdater()  // 每 10 秒，把这一小时的 time series 持久化存储
 	s.startNextDayMetricIDsUpdater()  // 每 11 秒，把这一天的 time sereies 持久化存储
-	s.startRetentionWatcher()  // 数据库默认支持的时间范围为30天，把超过30天的数据淘汰，每4小时检查一次   每4小时切换一个indexdb
+	s.startRetentionWatcher()  // 每31天+4小时切换一个indexdb
 	s.startFreeDiskSpaceWatcher()  // 每30秒，检查剩余磁盘空间
 
 	return s, nil
@@ -646,12 +646,12 @@ func (s *Storage) startRetentionWatcher() {
 
 func (s *Storage) retentionWatcher() {
 	for {
-		d := nextRetentionDuration(s.retentionMsecs)
+		d := nextRetentionDuration(s.retentionMsecs)  //31天+4小时切换一次索引
 		select {
-		case <-s.stop:
+		case <-s.stop:  //channel close会触发这个
 			return
 		case <-time.After(d):
-			s.mustRotateIndexDB()  //按照对齐后的未来四小时来执行，每四小时切换一次索引
+			s.mustRotateIndexDB()
 		}
 	}
 }
@@ -1066,16 +1066,16 @@ func (s *Storage) mustSaveCache(c *workingsetcache.Cache, info, name string) {
 // saveCacheLock prevents from data races when multiple concurrent goroutines save the same cache.
 var saveCacheLock sync.Mutex  //全局锁，用于缓存落地的时候使用
 
-func nextRetentionDuration(retentionMsecs int64) time.Duration {  //返回对齐后的未来四小时的时间点
+func nextRetentionDuration(retentionMsecs int64) time.Duration {  //返回对齐后的未来31天+4小时的时间点
 	// Round retentionMsecs to days. This guarantees that per-day inverted index works as expected.
-	retentionMsecs = ((retentionMsecs + msecPerDay - 1) / msecPerDay) * msecPerDay  //按照24小时对齐
+	retentionMsecs = ((retentionMsecs + msecPerDay - 1) / msecPerDay) * msecPerDay  //按照24小时对齐，一般应该为31天
 	t := time.Now().UnixNano() / 1e6  // unix timestamp 的 毫秒数
-	deadline := ((t + retentionMsecs - 1) / retentionMsecs) * retentionMsecs
+	deadline := ((t + retentionMsecs - 1) / retentionMsecs) * retentionMsecs  // 未来31天的某个时间戳
 	// Schedule the deadline to +4 hours from the next retention period start.
 	// This should prevent from possible double deletion of indexdb
 	// due to time drift - see https://github.com/VictoriaMetrics/VictoriaMetrics/issues/248 .
 	deadline += 4 * 3600 * 1000
-	return time.Duration(deadline-t) * time.Millisecond
+	return time.Duration(deadline-t) * time.Millisecond  // 搞懂了，indexdb的存储时间是存储支持周期的两倍
 }
 
 // SearchMetricNames returns metric names matching the given tfss on the given tr.
