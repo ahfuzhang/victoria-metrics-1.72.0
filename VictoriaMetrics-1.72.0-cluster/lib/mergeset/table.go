@@ -130,7 +130,7 @@ type rawItemsShards struct {  // 还未保存到part的数据
 
 	// shards reduce lock contention when adding rows on multi-CPU systems.
 	shards []rawItemsShard  // 数组长度与CPU核数一致，通过分桶来减少桶的竞争
-}
+}    //这个结构应该是memtable， 相当于512个memtable
 
 // The number of shards for rawItems per table.
 //

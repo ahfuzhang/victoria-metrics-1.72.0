@@ -219,7 +219,7 @@ func (c *Cache) Stop() {
 // Reset resets the cache.
 func (c *Cache) Reset() {  //清空整个cache   ??? 难道不是很危险吗
 	prev := c.prev.Load().(*fastcache.Cache)
-	prev.Reset()
+	prev.Reset()  //把数据块放回总的池子，把map清空。但是里面的数据没有真正的删除
 	curr := c.curr.Load().(*fastcache.Cache)
 	curr.Reset()
 	// Reset the mode to `split` in the hope the working set size becomes smaller after the reset.

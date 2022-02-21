@@ -269,7 +269,7 @@ func (db *indexDB) decRef() {
 	}
 
 	logger.Infof("dropping indexDB %q", tbPath)
-	fs.MustRemoveAll(tbPath)
+	fs.MustRemoveAll(tbPath)  //如果 mustDrop 为 1，删除这个31天为周期的目录
 	logger.Infof("indexDB %q has been dropped", tbPath)
 }
 

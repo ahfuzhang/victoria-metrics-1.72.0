@@ -18,7 +18,7 @@ import (
 
 const (
 	escapeChar       = 0
-	tagSeparatorChar = 1
+	tagSeparatorChar = 1  //这样一个magic number混在二进制数据里，是什么意思呢???
 	kvSeparatorChar  = 2
 )
 
@@ -78,7 +78,7 @@ func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
 	if n1 < 0 && n2 < 0 && n3 < 0 {
 		// Fast path.
 		dst = append(dst, src...)  // 如果目的缓冲区中，还没有 mn.MetricGroup 的内容，那么直接把 mn.MetricGroup 追加进去，就完成了序列化
-		dst = append(dst, tagSeparatorChar)
+		dst = append(dst, tagSeparatorChar)  //没有使用长度值，而是使用固定内容的分隔符. TLV不是更好吗？理解不了为什么这么做
 		return dst
 	}
 
@@ -86,7 +86,7 @@ func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
 	for _, ch := range src {  //遍历 mn.MetricGroup 中的每个byte
 		switch ch {
 		case escapeChar:
-			dst = append(dst, escapeChar, '0')
+			dst = append(dst, escapeChar, '0')  // ？？？ 分隔符后面再加个文本又是什么意思？
 		case tagSeparatorChar:
 			dst = append(dst, escapeChar, '1')
 		case kvSeparatorChar:
@@ -100,8 +100,8 @@ func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
 	return dst
 }
 
-func unmarshalTagValue(dst, src []byte) ([]byte, []byte, error) {
-	n := bytes.IndexByte(src, tagSeparatorChar)
+func unmarshalTagValue(dst, src []byte) ([]byte, []byte, error) { // ??? 把src中的某些字符做个替换，这个是要干啥呢？
+	n := bytes.IndexByte(src, tagSeparatorChar)  //序列化的时候并未有这样的写入过程啊
 	if n < 0 {
 		return src, dst, fmt.Errorf("cannot find the end of tag value")
 	}
@@ -137,7 +137,7 @@ type MetricName struct {
 	AccountID uint32
 	ProjectID uint32
 
-	MetricGroup []byte  // ??? 这个是干嘛用的？
+	MetricGroup []byte  // ??? 这个是干嘛用的？  看起来是原始的metric内容
 
 	// Tags are optional. They must be sorted by tag Key for canonical view.
 	// Use sortTags method.
@@ -518,7 +518,7 @@ func SetMaxLabelsPerTimeseries(maxLabels int) {
 //
 // The result must be unmarshaled with MetricName.UnmarshalRaw
 func MarshalMetricNameRaw(dst []byte, accountID, projectID uint32, labels []prompb.Label) []byte {
-	// Calculate the required space for dst.
+	// Calculate the required space for dst.  //把time series数据序列化成原始格式
 	dstLen := len(dst)
 	dstSize := dstLen + 8
 	for i := range labels {
@@ -540,7 +540,7 @@ func MarshalMetricNameRaw(dst []byte, accountID, projectID uint32, labels []prom
 			continue
 		}
 		if string(label.Name) == "__name__" {
-			label.Name = label.Name[:0]
+			label.Name = label.Name[:0]  // label name为空，说明它是 __name__这个lable name
 		}
 		dstSize += len(label.Name)
 		dstSize += len(label.Value)

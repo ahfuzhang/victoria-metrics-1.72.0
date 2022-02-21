@@ -716,7 +716,7 @@ func (s *Storage) mustRotateIndexDB() {  // indexdb切换
 	// Drop extDB
 	idbCurr := s.idb()
 	idbCurr.doExtDB(func(extDB *indexDB) {
-		extDB.scheduleToDrop()  // 把 -4 ~ -8小时的索引目录丢掉
+		extDB.scheduleToDrop()  // 把mustDrop的标志置1
 	})
 	idbCurr.SetExtDB(nil)
 
@@ -1054,7 +1054,7 @@ func (s *Storage) mustSaveCache(c *workingsetcache.Cache, info, name string) {
 	path := s.cachePath + "/" + name
 	logger.Infof("saving %s cache to %q...", info, path)
 	startTime := time.Now()
-	if err := c.Save(path); err != nil {
+	if err := c.Save(path); err != nil {  //存储cache数据到文件
 		logger.Panicf("FATAL: cannot save %s cache to %q: %s", info, path, err)
 	}
 	var cs fastcache.Stats
