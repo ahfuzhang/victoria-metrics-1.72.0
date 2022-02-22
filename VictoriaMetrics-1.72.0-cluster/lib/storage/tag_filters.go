@@ -20,19 +20,19 @@ import (
 // This converts `foo{bar="baz",x=~"a.+"}` to `{foo=bar="baz",foo=x=~"a.+"} filter.
 func convertToCompositeTagFilterss(tfss []*TagFilters) []*TagFilters {
 	tfssNew := make([]*TagFilters, 0, len(tfss))
-	for _, tfs := range tfss {
+	for _, tfs := range tfss {  //遍历每一组
 		tfssNew = append(tfssNew, convertToCompositeTagFilters(tfs)...)
 	}
 	return tfssNew
 }
 
-func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {  // tagFilter的格式转换。1.为什么要转换，2.怎么转换
-	var tfssCompiled []*TagFilters
+func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {  // tagFilter的格式转换。??? 1.为什么要转换，2.怎么转换
+	var tfssCompiled []*TagFilters   //??? 完全没看懂，
 	// Search for filters on metric name, which will be used for creating composite filters.
 	var names [][]byte
 	namePrefix := ""
 	hasPositiveFilter := false
-	for _, tf := range tfs.tfs {
+	for _, tf := range tfs.tfs {  //遍历每个label name + label value
 		if len(tf.key) == 0 {
 			if !tf.isNegative && !tf.isRegexp {
 				names = [][]byte{tf.value}  // 完全匹配
@@ -57,7 +57,7 @@ func convertToCompositeTagFilters(tfs *TagFilters) []*TagFilters {  // tagFilter
 
 	// Create composite filters for the found names.
 	var compositeKey, nameWithPrefix []byte
-	for _, name := range names {
+	for _, name := range names {  //遍历所有的label value
 		compositeFilters := 0
 		tfsNew := make([]tagFilter, 0, len(tfs.tfs))
 		for _, tf := range tfs.tfs {
@@ -140,7 +140,7 @@ type TagFilters struct {
 
 // NewTagFilters returns new TagFilters for the given accountID and projectID.
 func NewTagFilters(accountID, projectID uint32) *TagFilters {
-	return &TagFilters{
+	return &TagFilters{  //todo:应该使用sync.Pool
 		accountID:    accountID,
 		projectID:    projectID,
 		commonPrefix: marshalCommonPrefix(nil, nsPrefixTagToMetricIDs, accountID, projectID),
@@ -156,8 +156,8 @@ func (tfs *TagFilters) AddGraphiteQuery(query []byte, paths []string, isNegative
 // Add adds the given tag filter to tfs.
 //
 // MetricGroup must be encoded with nil key.
-func (tfs *TagFilters) Add(key, value []byte, isNegative, isRegexp bool) error {
-	// Verify whether tag filter is empty.
+func (tfs *TagFilters) Add(key, value []byte, isNegative, isRegexp bool) error {  //加入每个标签的过滤表达式
+	// Verify whether tag filter is empty.  //对表达式进行解析
 	if len(value) == 0 {
 		// Substitute an empty tag value with the negative match
 		// of `.+` regexp in order to filter out all the values with

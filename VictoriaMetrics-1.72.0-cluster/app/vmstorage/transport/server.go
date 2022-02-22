@@ -289,15 +289,15 @@ func (s *Server) processVMSelectConn(bc *handshake.BufferedConn) error {  // 处
 	}
 }
 
-type vmselectRequestCtx struct {
+type vmselectRequestCtx struct {  //查询过程中的上下文对象
 	bc      *handshake.BufferedConn
 	sizeBuf []byte
 	dataBuf []byte
 
-	sq   storage.SearchQuery
-	tfss []*storage.TagFilters
+	sq   storage.SearchQuery  //原始请求
+	tfss []*storage.TagFilters  //多组metric，会解析成更加具体的表达式
 	sr   storage.Search
-	mb   storage.MetricBlock
+	mb   storage.MetricBlock  //搜索到的metric数据
 
 	// timeout in seconds for the current request
 	timeout uint64
@@ -361,7 +361,7 @@ func (ctx *vmselectRequestCtx) readSearchQuery() error {
 	if err := ctx.readDataBufBytes(maxSearchQuerySize); err != nil {
 		return fmt.Errorf("cannot read searchQuery: %w", err)
 	}
-	tail, err := ctx.sq.Unmarshal(ctx.dataBuf)  // 解析查询请求
+	tail, err := ctx.sq.Unmarshal(ctx.dataBuf)  // 解析查询请求，有多个metric，每个metric又有多个label
 	if err != nil {
 		return fmt.Errorf("cannot unmarshal SearchQuery: %w", err)
 	}
@@ -1059,28 +1059,28 @@ func (s *Server) processVMSelectSearch(ctx *vmselectRequestCtx) error {  // quer
 		return ctx.writeErrorMessage(err)
 	}
 	startTime := time.Now()  //   -search.maxSamplesPerSeries 默认30万
-	ctx.sr.Init(s.storage, ctx.tfss, tr, *maxMetricsPerSearch, ctx.deadline)  // storage.Search 对象初始化
-	indexSearchDuration.UpdateDuration(startTime)
+	ctx.sr.Init(s.storage, ctx.tfss, tr, *maxMetricsPerSearch, ctx.deadline)  // storage.Search 对象初始化. ??? 为什么没有检查返回值
+	indexSearchDuration.UpdateDuration(startTime)  //用于上报延迟分布的histgram
 	defer ctx.sr.MustClose()
 	if err := ctx.sr.Error(); err != nil {
 		return ctx.writeErrorMessage(err)
 	}
 
 	// Send empty error message to vmselect.
-	if err := ctx.writeString(""); err != nil {
+	if err := ctx.writeString(""); err != nil {  //没搞懂这一步是干啥??? 难道是检查连接是否还在保持吗？
 		return fmt.Errorf("cannot send empty error message: %w", err)
 	}
 
-	// Send found blocks to vmselect.
-	for ctx.sr.NextMetricBlock() {
-		ctx.mb.MetricName = ctx.sr.MetricBlockRef.MetricName
+	// Send found blocks to vmselect.  //一般而言，循环的次数等于请求中 tagFilter的个数
+	for ctx.sr.NextMetricBlock() {  //核心代码：使用storageSearch对象来进行数据搜索
+		ctx.mb.MetricName = ctx.sr.MetricBlockRef.MetricName  //这里相当于读当前游标返回的数据
 		ctx.sr.MetricBlockRef.BlockRef.MustReadBlock(&ctx.mb.Block, fetchData)
 
 		vmselectMetricBlocksRead.Inc()
 		vmselectMetricRowsRead.Add(ctx.mb.Block.RowsCount())
 
 		ctx.dataBuf = ctx.mb.Marshal(ctx.dataBuf[:0])
-		if err := ctx.writeDataBufBytes(); err != nil {
+		if err := ctx.writeDataBufBytes(); err != nil {  //读到一个数据块后立即返回给vm-select
 			return fmt.Errorf("cannot send MetricBlock: %w", err)
 		}
 	}
@@ -1137,7 +1137,7 @@ func (ctx *vmselectRequestCtx) setupTfss(s *storage.Storage, tr storage.TimeRang
 	tfss := ctx.tfss[:0]
 	accountID := ctx.sq.AccountID
 	projectID := ctx.sq.ProjectID
-	for _, tagFilters := range ctx.sq.TagFilterss {
+	for _, tagFilters := range ctx.sq.TagFilterss {  //解析每一组metric
 		tfs := storage.NewTagFilters(accountID, projectID)
 		for i := range tagFilters {
 			tf := &tagFilters[i]
@@ -1154,12 +1154,12 @@ func (ctx *vmselectRequestCtx) setupTfss(s *storage.Storage, tr storage.TimeRang
 				tfs.AddGraphiteQuery(query, paths, tf.IsNegative)
 				continue
 			}
-			if err := tfs.Add(tf.Key, tf.Value, tf.IsNegative, tf.IsRegexp); err != nil {
+			if err := tfs.Add(tf.Key, tf.Value, tf.IsNegative, tf.IsRegexp); err != nil {  //加入每个标签的过滤表达式
 				return fmt.Errorf("cannot parse tag filter %s: %w", tf, err)
 			}
 		}
 		tfss = append(tfss, tfs)
 	}
-	ctx.tfss = tfss
+	ctx.tfss = tfss  //解析多个metric，及其每个metric下面的label name + label value
 	return nil
 }

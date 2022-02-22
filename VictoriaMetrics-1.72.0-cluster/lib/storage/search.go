@@ -57,12 +57,12 @@ type MetricBlockRef struct {
 }
 
 // MetricBlock is a time series block for a single metric.
-type MetricBlock struct {
+type MetricBlock struct {  //代表单个metric查询到的数据
 	// MetricName is metric name for the given Block.
-	MetricName []byte
+	MetricName []byte  // metric的label name + label value的部分
 
 	// Block is a block for the given MetricName
-	Block Block
+	Block Block  // time series的数据部分
 }
 
 // Marshal marshals MetricBlock to dst
@@ -175,7 +175,7 @@ func (s *Search) Init(storage *Storage, tfss []*TagFilters, tr TimeRange, maxMet
 
 	s.reset()
 	s.tr = tr  // TimeRange
-	s.tfss = tfss  // TagFilters
+	s.tfss = tfss  // TagFilters   通过解析好的metric组，来决定到底搜索哪些数据
 	s.deadline = deadline  // 客户端发过来的超时时间
 	s.needClosing = true
 
@@ -193,7 +193,7 @@ func (s *Search) Init(storage *Storage, tfss []*TagFilters, tr TimeRange, maxMet
 		return 0
 	}
 
-	s.idb = storage.idb()
+	s.idb = storage.idb()  //index db
 	return len(tsids)
 }
 
@@ -255,12 +255,12 @@ func (s *Search) NextMetricBlock() bool {
 }
 
 // SearchQuery is used for sending search queries from vmselect to vmstorage.
-type SearchQuery struct {
+type SearchQuery struct {  //来自vm-select的query_range请求的格式
 	AccountID    uint32
 	ProjectID    uint32
 	MinTimestamp int64
 	MaxTimestamp int64
-	TagFilterss  [][]TagFilter
+	TagFilterss  [][]TagFilter  //metric分组，每一组内又是多个label_name = label_value
 }
 
 // NewSearchQuery creates new search query for the given args.
@@ -307,8 +307,8 @@ func (tf *TagFilter) Marshal(dst []byte) []byte {
 }
 
 // Unmarshal unmarshals tf from src and returns the tail.
-func (tf *TagFilter) Unmarshal(src []byte) ([]byte, error) {
-	tail, k, err := encoding.UnmarshalBytes(src)
+func (tf *TagFilter) Unmarshal(src []byte) ([]byte, error) {  //解析一个过滤标签
+	tail, k, err := encoding.UnmarshalBytes(src)  //  长度 + 内容 这样的格式
 	if err != nil {
 		return tail, fmt.Errorf("cannot unmarshal Key: %w", err)
 	}
@@ -325,7 +325,7 @@ func (tf *TagFilter) Unmarshal(src []byte) ([]byte, error) {
 	if len(src) < 1 {
 		return src, fmt.Errorf("cannot unmarshal IsNegative+IsRegexp from empty src")
 	}
-	x := src[0]
+	x := src[0]  // bit0-是否是不等于,  bit1-是否是正则表达式
 	switch x {
 	case 0:
 		tf.IsNegative = false
@@ -406,7 +406,7 @@ func (sq *SearchQuery) Unmarshal(src []byte) ([]byte, error) {
 	sq.MaxTimestamp = maxTs
 	src = tail
 
-	tail, tfssCount, err := encoding.UnmarshalVarUint64(src)
+	tail, tfssCount, err := encoding.UnmarshalVarUint64(src)  //有N组过滤器
 	if err != nil {
 		return src, fmt.Errorf("cannot unmarshal the count of TagFilterss: %w", err)
 	}
@@ -417,7 +417,7 @@ func (sq *SearchQuery) Unmarshal(src []byte) ([]byte, error) {
 	src = tail
 
 	for i := 0; i < int(tfssCount); i++ {
-		tail, tfsCount, err := encoding.UnmarshalVarUint64(src)
+		tail, tfsCount, err := encoding.UnmarshalVarUint64(src)  //当前这一组的过滤标签数
 		if err != nil {
 			return src, fmt.Errorf("cannot unmarshal the count of TagFilters: %w", err)
 		}
@@ -428,7 +428,7 @@ func (sq *SearchQuery) Unmarshal(src []byte) ([]byte, error) {
 			tagFilters = append(tagFilters[:cap(tagFilters)], make([]TagFilter, n)...)
 		}
 		tagFilters = tagFilters[:tfsCount]
-		for j := 0; j < int(tfsCount); j++ {
+		for j := 0; j < int(tfsCount); j++ {  //当前这一组的标签
 			tail, err := tagFilters[j].Unmarshal(src)
 			if err != nil {
 				return tail, fmt.Errorf("cannot unmarshal TagFilter #%d: %w", j, err)

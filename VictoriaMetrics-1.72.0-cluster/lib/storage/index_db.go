@@ -83,7 +83,7 @@ type indexDB struct {
 	name string
 	tb   *mergeset.Table  // table 对象
 
-	extDB     *indexDB   // 存储前一个4小时的节点
+	extDB     *indexDB   // 存储前一个31天的索引
 	extDBLock sync.Mutex
 
 	// Cache for fast TagFilters -> TSIDs lookup.
@@ -1657,9 +1657,9 @@ func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int,
 	if len(tfss) == 0 {
 		return nil, nil
 	}
-	if tr.MinTimestamp >= db.s.minTimestampForCompositeIndex {
+	if tr.MinTimestamp >= db.s.minTimestampForCompositeIndex {  //这个条件证明，所有要搜索的数据，在时间范围上都在当前indexDB上
 		tfss = convertToCompositeTagFilterss(tfss)  // 转换搜索的标签的格式
-	}
+	}  // ??? 这里为什么没有else的处理
 
 	tfKeyBuf := tagFiltersKeyBufPool.Get()
 	defer tagFiltersKeyBufPool.Put(tfKeyBuf)
@@ -1822,7 +1822,7 @@ func (is *indexSearch) containsTimeRange(tr TimeRange) (bool, error) { // 存在
 	minDate := uint64(tr.MinTimestamp) / msecPerDay
 	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateToMetricID)  // 索引是个包容的大杂烩，其中一种索引是日期
 	prefix := kb.B
-	kb.B = encoding.MarshalUint64(kb.B, minDate)
+	kb.B = encoding.MarshalUint64(kb.B, minDate)  //??? 为什么不是检查一个日期范围呢?
 	ts.Seek(kb.B)  // kb.B 序列化了要搜索的原始KEY。 vm-storage的底层，是不是也可以理解为是一个KV存储？
 	if !ts.NextItem() {
 		if err := ts.Error(); err != nil {

@@ -10,7 +10,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 )
 
-type partSearch struct {
+type partSearch struct {  //类似游标的设计方法，成员保存了当前游标的信息
 	// Item contains the last item found after the call to NextItem.
 	//
 	// The Item content is valid until the next call to NextItem.
@@ -338,7 +338,7 @@ func binarySearchKey(data []byte, items []Item, key []byte) int {
 	// This has been copy-pasted from https://golang.org/src/sort/search.go
 	n := uint(len(items))
 	i, j := uint(0), n
-	for i < j {
+	for i < j {  //二分查找的逻辑
 		h := uint(i+j) >> 1
 		if h >= 0 && h < uint(len(items)) && string(key) > items[h].String(data) {
 			i = h + 1

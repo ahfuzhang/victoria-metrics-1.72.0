@@ -23,7 +23,7 @@ type partHeader struct {  // meta.json对应的结构
 	firstItem []byte  // part头中的第一个 time sereis
 
 	// The last item in the part.
-	lastItem []byte  // time series的原始数据，记录最后一个
+	lastItem []byte  // time series的原始数据，记录最后一个. 查询的时候，如果key大于lastItem，说明数据不在这个part中
 }
 
 type partHeaderJSON struct {
