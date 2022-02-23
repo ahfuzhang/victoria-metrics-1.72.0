@@ -7,6 +7,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/VictoriaMetrics/metrics"
+	"github.com/VictoriaMetrics/metricsql"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/netstorage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/searchutils"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/auth"
@@ -16,8 +19,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/memory"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
-	"github.com/VictoriaMetrics/metrics"
-	"github.com/VictoriaMetrics/metricsql"
 )
 
 var (
@@ -737,7 +738,7 @@ func evalRollupFuncWithMetricExpr(ec *EvalConfig, funcName string, rf rollupFunc
 
 	// Obtain rollup configs before fetching data from db,
 	// so type errors can be caught earlier.
-	sharedTimestamps := getTimestamps(start, ec.End, ec.Step)
+	sharedTimestamps := getTimestamps(start, ec.End, ec.Step)  //默认的step是5分钟
 	preFunc, rcs, err := getRollupConfigs(funcName, rf, expr, start, ec.End, ec.Step, window, ec.LookbackDelta, sharedTimestamps)
 	if err != nil {
 		return nil, err

@@ -1813,7 +1813,7 @@ func mergeTSIDs(a, b []TSID) []TSID {
 	}
 	return tsids
 }
-
+  // 这个函数证明最小时间那一天是否有数据。 ??? 严重的不靠谱，应该选择多天来验证。如果只是某一天不存在，这个结果明显是不严谨的。
 func (is *indexSearch) containsTimeRange(tr TimeRange) (bool, error) { // 存在date+metricid的索引，以date为前缀进行匹配，匹配到就证明索引中可以支持这个日期的查询
 	ts := &is.ts  // mergeset.TableSearch
 	kb := &is.kb  // 目的缓冲区
@@ -1824,13 +1824,13 @@ func (is *indexSearch) containsTimeRange(tr TimeRange) (bool, error) { // 存在
 	prefix := kb.B
 	kb.B = encoding.MarshalUint64(kb.B, minDate)  //??? 为什么不是检查一个日期范围呢?
 	ts.Seek(kb.B)  // kb.B 序列化了要搜索的原始KEY。 vm-storage的底层，是不是也可以理解为是一个KV存储？
-	if !ts.NextItem() {
+	if !ts.NextItem() {  //确保游标是否可用
 		if err := ts.Error(); err != nil {
 			return false, fmt.Errorf("error when searching for minDate=%d, prefix %q: %w", minDate, kb.B, err)
 		}
 		return false, nil
 	}
-	if !bytes.HasPrefix(ts.Item, prefix) {  // 按照日期来做前缀匹配
+	if !bytes.HasPrefix(ts.Item, prefix) {  // 按照日期来做前缀匹配。如果前缀匹配，就证明找到了
 		// minDate exceeds max date from ts.
 		return false, nil
 	}
@@ -2116,7 +2116,7 @@ func matchTagFilters(mn *MetricName, tfs []*tagFilter, kb *bytesutil.ByteBuffer)
 	}
 	return true, nil
 }
-
+    // 根据查询表达式，搜索对应的TSID
 func (is *indexSearch) searchMetricIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int) ([]uint64, error) {
 	metricIDs, err := is.searchMetricIDsInternal(tfss, tr, maxMetrics)
 	if err != nil {
@@ -2145,7 +2145,7 @@ func (is *indexSearch) searchMetricIDs(tfss []*TagFilters, tr TimeRange, maxMetr
 }
 
 func (is *indexSearch) searchMetricIDsInternal(tfss []*TagFilters, tr TimeRange, maxMetrics int) (*uint64set.Set, error) {
-	metricIDs := &uint64set.Set{}
+	metricIDs := &uint64set.Set{}  // 用于保存结果
 	for _, tfs := range tfss {
 		if len(tfs.tfs) == 0 {
 			// An empty filters must be equivalent to `{__name__!=""}`
@@ -2164,7 +2164,7 @@ func (is *indexSearch) searchMetricIDsInternal(tfss []*TagFilters, tr TimeRange,
 	return metricIDs, nil
 }
 
-func (is *indexSearch) updateMetricIDsForTagFilters(metricIDs *uint64set.Set, tfs *TagFilters, tr TimeRange, maxMetrics int) error {
+func (is *indexSearch) updateMetricIDsForTagFilters(metricIDs *uint64set.Set, tfs *TagFilters, tr TimeRange, maxMetrics int) error {  //具体某一个tag表达式的搜索过程
 	err := is.tryUpdatingMetricIDsForDateRange(metricIDs, tfs, tr, maxMetrics)
 	if err == nil {
 		// Fast path: found metricIDs by date range.
@@ -2184,7 +2184,7 @@ func (is *indexSearch) updateMetricIDsForTagFilters(metricIDs *uint64set.Set, tf
 	return nil
 }
 
-func (is *indexSearch) getMetricIDsForTagFilter(tf *tagFilter, maxMetrics int, maxLoopsCount int64) (*uint64set.Set, int64, error) {
+func (is *indexSearch) getMetricIDsForTagFilter(tf *tagFilter, maxMetrics int, maxLoopsCount int64) (*uint64set.Set, int64, error) {  //查询单个过滤项，一般以 date+metricName 为key进行搜索
 	if tf.isNegative {
 		logger.Panicf("BUG: isNegative must be false")
 	}
@@ -2208,7 +2208,7 @@ func (is *indexSearch) getMetricIDsForTagFilter(tf *tagFilter, maxMetrics int, m
 
 var errTooManyLoops = fmt.Errorf("too many loops is needed for applying this filter")
 
-func (is *indexSearch) getMetricIDsForTagFilterSlow(tf *tagFilter, f func(metricID uint64), maxLoopsCount int64) (int64, error) {
+func (is *indexSearch) getMetricIDsForTagFilterSlow(tf *tagFilter, f func(metricID uint64), maxLoopsCount int64) (int64, error) {  //根据单个过滤表达式，查询metricID
 	if len(tf.orSuffixes) > 0 {
 		logger.Panicf("BUG: the getMetricIDsForTagFilterSlow must be called only for empty tf.orSuffixes; got %s", tf.orSuffixes)
 	}
@@ -2223,8 +2223,8 @@ func (is *indexSearch) getMetricIDsForTagFilterSlow(tf *tagFilter, f func(metric
 	var loopsCount int64
 	loopsPaceLimiter := 0
 	prefix := tf.prefix
-	ts.Seek(prefix)
-	for ts.NextItem() {
+	ts.Seek(prefix)  //调用 table search的seek，遍历了所有的part
+	for ts.NextItem() {  // 循环使用游标，从heap中提取数据
 		if loopsPaceLimiter&paceLimiterMediumIterationsMask == 0 {
 			if err := checkSearchDeadlineAndPace(is.deadline); err != nil {
 				return loopsCount, err
@@ -2290,7 +2290,7 @@ func (is *indexSearch) getMetricIDsForTagFilterSlow(tf *tagFilter, f func(metric
 		prevMatch = true
 		prevMatchingSuffix = append(prevMatchingSuffix[:0], suffix...)
 		for _, metricID := range mp.MetricIDs {
-			f(metricID)
+			f(metricID)  //把数据加入到 uint64set
 		}
 	}
 	if err := ts.Error(); err != nil {
@@ -2360,11 +2360,11 @@ var errFallbackToGlobalSearch = errors.New("fall back from per-day index search 
 
 const maxDaysForPerDaySearch = 40
 
-func (is *indexSearch) tryUpdatingMetricIDsForDateRange(metricIDs *uint64set.Set, tfs *TagFilters, tr TimeRange, maxMetrics int) error {
+func (is *indexSearch) tryUpdatingMetricIDsForDateRange(metricIDs *uint64set.Set, tfs *TagFilters, tr TimeRange, maxMetrics int) error {  //搜索一个tag的过程
 	atomic.AddUint64(&is.db.dateRangeSearchCalls, 1)
 	minDate := uint64(tr.MinTimestamp) / msecPerDay
 	maxDate := uint64(tr.MaxTimestamp) / msecPerDay
-	if minDate > maxDate || maxDate-minDate > maxDaysForPerDaySearch {
+	if minDate > maxDate || maxDate-minDate > maxDaysForPerDaySearch {  //todo: 后面要看看，vm-select是不是会把长周期自动拆成多个40天
 		// Too much dates must be covered. Give up, since it may be slow.
 		return errFallbackToGlobalSearch
 	}
@@ -2413,7 +2413,7 @@ func (is *indexSearch) tryUpdatingMetricIDsForDateRange(metricIDs *uint64set.Set
 	atomic.AddUint64(&is.db.dateRangeSearchHits, 1)
 	return nil
 }
-
+   //查询只需要一天数据的情况
 func (is *indexSearch) getMetricIDsForDateAndFilters(date uint64, tfs *TagFilters, maxMetrics int) (*uint64set.Set, error) {
 	// Sort tfs by loopsCount needed for performing each filter.
 	// This stats is usually collected from the previous queries.
@@ -2425,7 +2425,7 @@ func (is *indexSearch) getMetricIDsForDateAndFilters(date uint64, tfs *TagFilter
 	}
 	tfws := make([]tagFilterWithWeight, len(tfs.tfs))
 	currentTime := fasttime.UnixTimestamp()
-	for i := range tfs.tfs {
+	for i := range tfs.tfs {  //遍历每个过滤项
 		tf := &tfs.tfs[i]
 		loopsCount, filterLoopsCount, timestamp := is.getLoopsCountAndTimestampForDateFilter(date, tf)
 		if currentTime > timestamp+3600 {
@@ -2499,7 +2499,7 @@ func (is *indexSearch) getMetricIDsForDateAndFilters(date uint64, tfs *TagFilter
 			continue
 		}
 		storeLoopsCount(&tfw, loopsCount)
-		metricIDs = m
+		metricIDs = m  // ??? 为什么这里不是取并集呢 ??
 		tfwsRemaining = append(tfwsRemaining, tfws[i+1:]...)
 		break
 	}
@@ -2731,7 +2731,7 @@ func (is *indexSearch) hasDateMetricID(date, metricID uint64) (bool, error) {
 	return true, nil
 }
 
-func (is *indexSearch) getMetricIDsForDateTagFilter(tf *tagFilter, date uint64, commonPrefix []byte, maxMetrics int, maxLoopsCount int64) (*uint64set.Set, int64, error) {
+func (is *indexSearch) getMetricIDsForDateTagFilter(tf *tagFilter, date uint64, commonPrefix []byte, maxMetrics int, maxLoopsCount int64) (*uint64set.Set, int64, error) {  //过滤单个metric的表达式
 	if !bytes.HasPrefix(tf.prefix, commonPrefix) {
 		logger.Panicf("BUG: unexpected tf.prefix %q; must start with commonPrefix %q", tf.prefix, commonPrefix)
 	}
@@ -2739,7 +2739,7 @@ func (is *indexSearch) getMetricIDsForDateTagFilter(tf *tagFilter, date uint64, 
 	defer kbPool.Put(kb)
 	if date != 0 {
 		// Use per-date search.
-		kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateTagToMetricIDs)
+		kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixDateTagToMetricIDs)  //使用 日期+metricName 这个key
 		kb.B = encoding.MarshalUint64(kb.B, date)
 	} else {
 		// Use global search if date isn't set.

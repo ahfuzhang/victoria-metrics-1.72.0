@@ -37,7 +37,7 @@ type partSearch struct {  //类似游标的设计方法，成员保存了当前�
 	sb storageBlock  // 缓存从items.bin, lens.bin中读出的数据
 
 	ib        *inmemoryBlock  // 当前搜索到的块里面的多个 time series
-	ibItemIdx int  // inmemoryBlock内的游标的指向位置
+	ibItemIdx int  // inmemoryBlock内的游标的指向位置。最终搜索到的位置
 }
 
 func (ps *partSearch) reset() {
@@ -143,16 +143,16 @@ func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time s
 	// Locate the first item to scan in the block.  //todo:每个搜索过程其实都可以是独立的方法。封装问题导致阅读起来很困难
 	items := ps.ib.items
 	data := ps.ib.data
-	cpLen := commonPrefixLen(ps.ib.commonPrefix, k)
-	if cpLen > 0 {
-		keySuffix := k[cpLen:]
+	cpLen := commonPrefixLen(ps.ib.commonPrefix, k)  // 计算公共前缀的长度
+	if cpLen > 0 {  //存在公共前缀
+		keySuffix := k[cpLen:]  // ??? 为什么要按照公共前缀来搜索呢?
 		ps.ibItemIdx = sort.Search(len(items), func(i int) bool {
 			it := items[i]
 			it.Start += uint32(cpLen)
 			return string(keySuffix) <= it.String(data)
 		})
 	} else {
-		ps.ibItemIdx = binarySearchKey(data, items, k)
+		ps.ibItemIdx = binarySearchKey(data, items, k)  //在大buffer中二分查找
 	}
 	if ps.ibItemIdx < len(items) {
 		// The item has been found.
@@ -203,9 +203,9 @@ func (ps *partSearch) tryFastSeek(k []byte) bool {
 // NextItem advances to the next Item.
 //
 // Returns true on success.
-func (ps *partSearch) NextItem() bool {
+func (ps *partSearch) NextItem() bool {  //检查游标是否可用
 	if ps.err != nil {
-		return false
+		return false  //找不到的话， Seek中会把err设置为EOF
 	}
 
 	items := ps.ib.items

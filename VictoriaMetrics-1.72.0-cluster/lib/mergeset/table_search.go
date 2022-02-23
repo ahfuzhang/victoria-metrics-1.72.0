@@ -22,7 +22,7 @@ type TableSearch struct {
 	pws []*partWrapper  // index下面的多个 part
 
 	psPool []partSearch  // 可能是每个part, 对应着一个part search对象
-	psHeap partSearchHeap
+	psHeap partSearchHeap  //猜测是把含有可能的前缀的元素，放到一个堆里面去。 ??? 为什么是堆呢
 
 	err error
 
@@ -100,7 +100,7 @@ func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜�
 			}
 			continue
 		}
-		ts.psHeap = append(ts.psHeap, ps)
+		ts.psHeap = append(ts.psHeap, ps)  // 看起来是搜索到了，加入数组。可是，同一个key怎么可能搜索到多次呢？
 	}
 	if len(errors) > 0 {
 		// Return only the first error, since it has no sense in returning all errors.
@@ -111,7 +111,7 @@ func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜�
 		ts.err = io.EOF
 		return
 	}
-	heap.Init(&ts.psHeap)
+	heap.Init(&ts.psHeap)   //猜测这里可能只是粗筛，把含有可能的前缀的part都放进去
 	ts.Item = ts.psHeap[0].Item
 	ts.nextItemNoop = true
 }
@@ -141,7 +141,7 @@ func (ts *TableSearch) NextItem() bool {
 	if ts.err != nil {
 		return false
 	}
-	if ts.nextItemNoop {
+	if ts.nextItemNoop {  //一开始 nextItemNoop 为false
 		ts.nextItemNoop = false
 		return true
 	}
@@ -156,10 +156,10 @@ func (ts *TableSearch) NextItem() bool {
 	return true
 }
 
-func (ts *TableSearch) nextBlock() error {
-	psMin := ts.psHeap[0]
-	if psMin.NextItem() {
-		heap.Fix(&ts.psHeap, 0)
+func (ts *TableSearch) nextBlock() error {  //初筛的数据放到heap，再精筛   //看起来又不像筛选，如果是筛选，应该要传入需要比较的key
+	psMin := ts.psHeap[0]  // 获取堆顶的 *partSearch 对象
+	if psMin.NextItem() {  //这个是检查游标的吗？
+		heap.Fix(&ts.psHeap, 0)  //删除堆顶元素后，调整堆
 		ts.Item = ts.psHeap[0].Item
 		return nil
 	}
@@ -174,7 +174,7 @@ func (ts *TableSearch) nextBlock() error {
 		return io.EOF
 	}
 
-	ts.Item = ts.psHeap[0].Item
+	ts.Item = ts.psHeap[0].Item  //找到后，对 item 字段进行赋值。这个字段应该是最终找到的内容
 	return nil
 }
 
