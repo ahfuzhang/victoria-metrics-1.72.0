@@ -60,7 +60,7 @@ type part struct {  // 所有的time series应该是排序后存储的，每个p
 	lensFile  fs.MustReadAtCloser  // lens.bin
 
 	idxbCache *indexBlockCache  // 从 index.bin中加载的数据，放在cache里面
-	ibCache   *inmemoryBlockCache
+	ibCache   *inmemoryBlockCache  // 以偏移量为key
 }
 
 func openFilePart(path string) (*part, error) {  // 打开具体的一个part
@@ -112,7 +112,7 @@ func newPart(ph *partHeader, path string, size uint64, metaindexReader filestrea
 	p.lensFile = lensFile
 
 	p.ph.CopyFrom(ph)  // part head
-	p.idxbCache = newIndexBlockCache()
+	p.idxbCache = newIndexBlockCache()  //以偏移量为key的fastcache
 	p.ibCache = newInmemoryBlockCache()  // 这个很重要
 
 	if len(errors) > 0 {
@@ -146,7 +146,7 @@ func (idxb *indexBlock) SizeBytes() int {
 	return n
 }
 
-type indexBlockCache struct {
+type indexBlockCache struct {  //这个cache不是 fastcache，看来还要仔细的看看实现原理
 	// Atomically updated counters must go first in the struct, so they are properly
 	// aligned to 8 bytes on 32-bit architectures.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
@@ -180,7 +180,7 @@ func newIndexBlockCache() *indexBlockCache {
 	idxbc.cleanerWG.Add(1)
 	go func() {
 		defer idxbc.cleanerWG.Done()
-		idxbc.cleaner()
+		idxbc.cleaner()  //开启一个协程定期清理过期数据
 	}()
 	return &idxbc
 }

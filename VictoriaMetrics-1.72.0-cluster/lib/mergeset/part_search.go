@@ -14,30 +14,30 @@ type partSearch struct {  //类似游标的设计方法，成员保存了当前�
 	// Item contains the last item found after the call to NextItem.
 	//
 	// The Item content is valid until the next call to NextItem.
-	Item []byte
+	Item []byte  //猜测是 block 中的数据
 
 	// p is a part to search.
-	p *part  // 每个part search指向对应的 part
+	p *part  // 每个part search指向对应的 part.  字段内容来自part对象
 
 	// The remaining metaindex rows to scan, obtained from p.mrs.
 	mrs []metaindexRow  // 这个数组直接复制 part 对象中的对应数组
-
+       // 数组的 firstItem字段是排序的，因此可以根据firstItem来做二分查找
 	// The remaining block headers to scan in the current metaindexRow.
 	bhs []blockHeader  // 当前扫描到的 metaindexRow中的 blockHeader 数组
 
-	idxbCache *indexBlockCache  // indexBlock对象的fastcache, 以 metaindexRow中的偏移量信息为key
-	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找。 每个inmemoryBlock对象是64KB
-
+	idxbCache *indexBlockCache  // indexBlock对象的fastcache, 以 metaindexRow中的偏移量信息为key.  字段内容来自part对象
+	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找。 每个inmemoryBlock对象是64KB.  字段内容来自part对象
+         // 以偏移量为key
 	// err contains the last error.
 	err error
 
-	indexBuf           []byte
+	indexBuf           []byte  //临时数据的buffer
 	compressedIndexBuf []byte  // 这些临时对象其实不用放在这里。但是放在这里的话，能够减少GC
 
 	sb storageBlock  // 缓存从items.bin, lens.bin中读出的数据
 
 	ib        *inmemoryBlock  // 当前搜索到的块里面的多个 time series
-	ibItemIdx int
+	ibItemIdx int  // inmemoryBlock内的游标的指向位置
 }
 
 func (ps *partSearch) reset() {
@@ -54,7 +54,7 @@ func (ps *partSearch) reset() {
 
 	ps.sb.Reset()
 
-	ps.ib = nil
+	ps.ib = nil   //一开始，inMemoryBlock是空的. nextBlock()调用的时候会产生赋值
 	ps.ibItemIdx = 0
 }
 
@@ -66,7 +66,7 @@ func (ps *partSearch) Init(p *part) {
 
 	ps.p = p
 	ps.idxbCache = p.idxbCache
-	ps.ibCache = p.ibCache
+	ps.ibCache = p.ibCache  // cache使用了part对象的cache
 }
 
 // Seek seeks for the first item greater or equal to k in ps.
@@ -84,12 +84,12 @@ func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time s
 	}
 
 	if ps.tryFastSeek(k) {  //  在 in-memory block中搜索
-		return
+		return  // 一开始 inmemoryBlock 是空的，返回肯定是false
 	}
 
 	ps.Item = nil
-	ps.mrs = ps.p.mrs  // 复制排序了的 metaindex
-	ps.bhs = nil
+	ps.mrs = ps.p.mrs  // 复制排序了的 metaindexRow
+	ps.bhs = nil    // []blockHeader数组
 
 	ps.indexBuf = ps.indexBuf[:0]
 	ps.compressedIndexBuf = ps.compressedIndexBuf[:0]
@@ -99,48 +99,48 @@ func (ps *partSearch) Seek(k []byte) {  // 在 part 中，根据原始的 time s
 	ps.ib = nil
 	ps.ibItemIdx = 0
 
-	if string(k) <= string(ps.p.ph.firstItem) {  // 如果比第一个time sereis还要小
+	if string(k) <= string(ps.p.ph.firstItem) {  // 如果比第一个time sereis还要小   // ??? firstItem和lastItem 的比较为什么不连续的放在一起呢？？？
 		// The first item in the first block matches.
 		ps.err = ps.nextBlock()  // 没看懂，这里为什么是 nextBlock ?
-		return
+		return  //猜测是为了把游标指向这个part对应的inmemoryBlock。相当于磁盘搜索不到，再去内存搜索
 	}
-
+		//执行到这里，说明要搜索的数据就在当前part里面
 	// Locate the first metaindexRow to scan.
 	if len(ps.mrs) == 0 {
 		logger.Panicf("BUG: part without metaindex rows passed to partSearch")
 	}
-	n := sort.Search(len(ps.mrs), func(i int) bool {  // 二分查找
+	n := sort.Search(len(ps.mrs), func(i int) bool {  // 在metaindexRow之间做二分查找
 		return string(k) <= string(ps.mrs[i].firstItem)  // 编译器优化string()
 	})
 	if n > 0 {
 		// The given k may be located in the previous metaindexRow, so go to it.
-		n--
+		n--  // ??? 为什么要移动到前一个呢？  猜测是各个metaindexRow的前一个和后一个包含了重复的数据导致的
 	}
-	ps.mrs = ps.mrs[n:]
+	ps.mrs = ps.mrs[n:]  //相当于移动了游标，游标的第0个元素指向最合适的节点
 
 	// Read block headers for the found metaindexRow.
-	if err := ps.nextBHS(); err != nil {
+	if err := ps.nextBHS(); err != nil {  //填充[]blockHeaders数组。其实就是取得part下所有block的头信息
 		ps.err = err
 		return
 	}
 
-	// Locate the first block to scan.
-	n = sort.Search(len(ps.bhs), func(i int) bool {
+	// Locate the first block to scan.  //??? part和block之间的那个结构叫什么?
+	n = sort.Search(len(ps.bhs), func(i int) bool {  //在metaindexRow内的block之间进行搜索
 		return string(k) <= string(ps.bhs[i].firstItem)
 	})
 	if n > 0 {
 		// The given k may be located in the previous block, so go to it.
 		n--
 	}
-	ps.bhs = ps.bhs[n:]
+	ps.bhs = ps.bhs[n:]  //游标移动到合适的block
 
 	// Read the block.
-	if err := ps.nextBlock(); err != nil {
+	if err := ps.nextBlock(); err != nil {  //把block读取到内存
 		ps.err = err
 		return
 	}
 
-	// Locate the first item to scan in the block.
+	// Locate the first item to scan in the block.  //todo:每个搜索过程其实都可以是独立的方法。封装问题导致阅读起来很困难
 	items := ps.ib.items
 	data := ps.ib.data
 	cpLen := commonPrefixLen(ps.ib.commonPrefix, k)
@@ -237,16 +237,16 @@ func (ps *partSearch) Error() error {
 	return ps.err
 }
 
-func (ps *partSearch) nextBlock() error {
+func (ps *partSearch) nextBlock() error {  //当key比firstItem还要小的时候，流程转到这里
 	if len(ps.bhs) == 0 {
 		// The current metaindexRow is over. Proceed to the next metaindexRow.
 		if err := ps.nextBHS(); err != nil {
 			return err
 		}
 	}
-	bh := &ps.bhs[0]
-	ps.bhs = ps.bhs[1:]
-	ib, err := ps.getInmemoryBlock(bh)
+	bh := &ps.bhs[0]  //取block游标的第0个元素
+	ps.bhs = ps.bhs[1:]  //游标指向下一个block
+	ib, err := ps.getInmemoryBlock(bh)  //把这个block加载到内存
 	if err != nil {
 		return err
 	}
@@ -255,12 +255,12 @@ func (ps *partSearch) nextBlock() error {
 	return nil
 }
 
-func (ps *partSearch) nextBHS() error {
+func (ps *partSearch) nextBHS() error {  //填充[]blockHeader数组。有缓存就从缓存，没缓存从index.bin中读取
 	if len(ps.mrs) == 0 {
 		return io.EOF
 	}
-	mr := &ps.mrs[0]
-	ps.mrs = ps.mrs[1:]
+	mr := &ps.mrs[0]  //取游标的第0个
+	ps.mrs = ps.mrs[1:]  //偏移游标，便于下次的数据获取
 	idxbKey := mr.indexBlockOffset
 	idxb := ps.idxbCache.Get(idxbKey)
 	if idxb == nil {
@@ -271,7 +271,7 @@ func (ps *partSearch) nextBHS() error {
 		}
 		ps.idxbCache.Put(idxbKey, idxb)  // 以偏移量为key，写入indexBlock对象
 	}
-	ps.bhs = idxb.bhs
+	ps.bhs = idxb.bhs  //获得index block
 	return nil
 }
 
@@ -292,7 +292,7 @@ func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {  /
 	return idxb, nil
 }
 
-func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {
+func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {  //根据blockHeader，加载数据到内存
 	var ibKey inmemoryBlockCacheKey
 	ibKey.Init(bh)  // 以偏移量作为cache的key
 	ib := ps.ibCache.Get(ibKey)
