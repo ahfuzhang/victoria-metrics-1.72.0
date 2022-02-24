@@ -6,7 +6,7 @@ import (
 )
 
 // Resize resizes b to n bytes and returns b (which may be newly allocated).
-func Resize(b []byte, n int) []byte {
+func Resize(b []byte, n int) []byte {  //对数组扩容
 	if nn := n - cap(b); nn > 0 {
 		b = append(b[:cap(b)], make([]byte, nn)...)
 	}

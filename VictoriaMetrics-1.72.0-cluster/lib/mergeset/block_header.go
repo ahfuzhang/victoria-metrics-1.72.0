@@ -14,7 +14,7 @@ type blockHeader struct {
 	commonPrefix []byte  // block内的所有time series的最大公共前缀
 
 	// The first item.
-	firstItem []byte  // 第一个time series
+	firstItem []byte  // 第一个key的内容
 
 	// Marshal type used for block compression.
 	marshalType marshalType  //是否使用ZSTD压缩。很小的块是不压缩的
@@ -50,7 +50,7 @@ func (bh *blockHeader) Reset() {
 	bh.lensBlockSize = 0
 }
 
-func (bh *blockHeader) Marshal(dst []byte) []byte {
+func (bh *blockHeader) Marshal(dst []byte) []byte {  //序列化blockHeader
 	dst = encoding.MarshalBytes(dst, bh.commonPrefix)
 	dst = encoding.MarshalBytes(dst, bh.firstItem)
 	dst = append(dst, byte(bh.marshalType))

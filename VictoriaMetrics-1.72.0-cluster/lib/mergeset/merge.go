@@ -33,7 +33,7 @@ func mergeBlockStreams(ph *partHeader, bsw *blockStreamWriter, bsrs []*blockStre
 	if err := bsm.Init(bsrs, prepareBlock); err != nil {  // 把 压缩好的数据又解压缩了，方便读取。（蛋疼啊！一开始就不要压缩就好了）
 		return fmt.Errorf("cannot initialize blockStreamMerger: %w", err)
 	}  // 把数据放到了 bsrHeap 字段
-	err := bsm.Merge(bsw, ph, stopCh, itemsMerged)
+	err := bsm.Merge(bsw, ph, stopCh, itemsMerged)  //两两合并
 	bsm.reset()
 	bsmPool.Put(bsm)
 	bsw.MustClose()
@@ -51,11 +51,11 @@ var bsmPool = &sync.Pool{
 
 type blockStreamMerger struct {
 	prepareBlock PrepareBlockCallback  // 初始化 storage 对象时候提供的回调函数
-
+        //  lib/storage/index_db.go:3751  mergeTagToMetricIDsRows
 	bsrHeap bsrHeap  // 这个是一个堆的数据结构
 
 	// ib is a scratch block with pending items.
-	ib inmemoryBlock
+	ib inmemoryBlock  //用于合并过程中，把别的 inmemoryBlock 中的 KEY 拷贝过来
 
 	phFirstItemCaught bool
 
@@ -89,7 +89,7 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock Prepa
 			return fmt.Errorf("cannot obtain the next block from blockStreamReader %q: %w", bsr.path, err)
 		}
 	}
-	heap.Init(&bsm.bsrHeap)  // 调整堆  ??? 调整堆和sort()有什么差别？
+	heap.Init(&bsm.bsrHeap)  // 调整堆  ??? 调整堆和sort()有什么差别？  // 根据firstItem来建立堆
 
 	if len(bsm.bsrHeap) == 0 {
 		return fmt.Errorf("bsrHeap cannot be empty")
@@ -100,7 +100,7 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock Prepa
 
 var errForciblyStopped = fmt.Errorf("forcibly stopped")
 
-func (bsm *blockStreamMerger) Merge(bsw *blockStreamWriter, ph *partHeader, stopCh <-chan struct{}, itemsMerged *uint64) error {  // 合并15个 inmemoryPart
+func (bsm *blockStreamMerger) Merge(bsw *blockStreamWriter, ph *partHeader, stopCh <-chan struct{}, itemsMerged *uint64) error {  // 合并15个 inmemoryPart  //两两合并。每合并满64KB，就写入 mpDst 的 ByteBuffer 中
 again:  // todo: 丑陋的代码
 	if len(bsm.bsrHeap) == 0 {
 		// Write the last (maybe incomplete) inmemoryBlock to bsw.
@@ -119,24 +119,24 @@ again:  // todo: 丑陋的代码
 	var nextItem []byte
 	hasNextItem := false
 	if len(bsm.bsrHeap) > 0 {
-		nextItem = bsm.bsrHeap[0].bh.firstItem
+		nextItem = bsm.bsrHeap[0].bh.firstItem  //下一个block中的数据
 		hasNextItem = true
 	}
-	items := bsr.Block.items
+	items := bsr.Block.items  // inmemoryBlock 中的数据
 	data := bsr.Block.data
-	for bsr.blockItemIdx < len(bsr.Block.items) {
+	for bsr.blockItemIdx < len(bsr.Block.items) {  //遍历每条数据
 		item := items[bsr.blockItemIdx].Bytes(data)
 		if hasNextItem && string(item) > string(nextItem) {  // 编译器优化string()
-			break
+			break  //走到这里，说明这个块和下个块的排序存在交叉
 		}
-		if !bsm.ib.Add(item) {
+		if !bsm.ib.Add(item) {  //拷贝到新的 inmemoryBlock
 			// The bsm.ib is full. Flush it to bsw and continue.
-			bsm.flushIB(bsw, ph, itemsMerged)
+			bsm.flushIB(bsw, ph, itemsMerged)  // inmemoryBlock 超过64KB后，走到这里。写入了 ByteBuffer 对象
 			continue
 		}
-		bsr.blockItemIdx++
+		bsr.blockItemIdx++  //移动第一个块的游标，直到和第二个块对齐
 	}
-	if bsr.blockItemIdx == len(bsr.Block.items) {
+	if bsr.blockItemIdx == len(bsr.Block.items) {  //当前块处理完成后，处理下一个块
 		// bsr.Block is fully read. Proceed to the next block.
 		if bsr.Next() {
 			heap.Push(&bsm.bsrHeap, bsr)
@@ -151,10 +151,10 @@ again:  // todo: 丑陋的代码
 	// The next item in the bsr.Block exceeds nextItem.
 	// Adjust bsr.bh.firstItem and return bsr to heap.
 	bsr.bh.firstItem = append(bsr.bh.firstItem[:0], bsr.Block.items[bsr.blockItemIdx].String(bsr.Block.data)...)
-	heap.Push(&bsm.bsrHeap, bsr)
+	heap.Push(&bsm.bsrHeap, bsr)  //当两个block遇到交叉的key，放回堆内重新排序。重新两两合并
 	goto again
 }
-
+  // inmemoryBlock 超过64KB后，进入这里
 func (bsm *blockStreamMerger) flushIB(bsw *blockStreamWriter, ph *partHeader, itemsMerged *uint64) {
 	items := bsm.ib.items  // inmemoryBlock 中的数据
 	data := bsm.ib.data
@@ -163,7 +163,7 @@ func (bsm *blockStreamMerger) flushIB(bsw *blockStreamWriter, ph *partHeader, it
 		return
 	}
 	atomic.AddUint64(itemsMerged, uint64(len(items)))
-	if bsm.prepareBlock != nil {
+	if bsm.prepareBlock != nil {  // 如果指定了回调函数，就执行回调函数。
 		bsm.firstItem = append(bsm.firstItem[:0], items[0].String(data)...)
 		bsm.lastItem = append(bsm.lastItem[:0], items[len(items)-1].String(data)...)
 		data, items = bsm.prepareBlock(data, items)  // 调用回调函数
@@ -194,8 +194,8 @@ func (bsm *blockStreamMerger) flushIB(bsw *blockStreamWriter, ph *partHeader, it
 		bsm.phFirstItemCaught = true
 	}
 	ph.lastItem = append(ph.lastItem[:0], items[len(items)-1].String(data)...)
-	bsw.WriteBlock(&bsm.ib)
-	bsm.ib.Reset()
+	bsw.WriteBlock(&bsm.ib)  // 把当前的 inmemoryBlock 进行写入，其实是拷贝到 ByteBuffer 对象(经过了ZSTD压缩)
+	bsm.ib.Reset()  //写入
 	ph.blocksCount++
 }
 

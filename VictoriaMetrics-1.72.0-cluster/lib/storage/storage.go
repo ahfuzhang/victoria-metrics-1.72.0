@@ -1872,7 +1872,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		if pmrs == nil {  //把要插入的数据放在这个结构里
 			pmrs = getPendingMetricRows()  //从内存池获取
 		}
-		if err := pmrs.addRow(mr); err != nil {  // 如果是新的tsid
+		if err := pmrs.addRow(mr); err != nil {  // 如果是新的tsid   // pmrs.addRow(mr)这里会把vm-insert发过来的数据反序列化
 			// Do not stop adding rows on error - just skip invalid row.
 			// This guarantees that invalid rows don't prevent
 			// from adding valid rows into the storage.
@@ -2014,7 +2014,7 @@ func (pmrs *pendingMetricRows) addRow(mr *MetricRow) error {  // 插入一行的
 	// Do not spend CPU time on re-calculating canonical metricName during bulk import
 	// of many rows for the same metric.
 	if string(mr.MetricNameRaw) != string(pmrs.lastMetricNameRaw) {
-		if err := pmrs.mn.UnmarshalRaw(mr.MetricNameRaw); err != nil {
+		if err := pmrs.mn.UnmarshalRaw(mr.MetricNameRaw); err != nil {  // mn.UnmarshalRaw 把vm-insert发过来的数据反序列化
 			return fmt.Errorf("cannot unmarshal MetricNameRaw %q: %w", mr.MetricNameRaw, err)
 		}
 		pmrs.mn.sortTags()  // 对tag排序
@@ -2025,7 +2025,7 @@ func (pmrs *pendingMetricRows) addRow(mr *MetricRow) error {  // 插入一行的
 	}
 	pmrs.pmrs = append(pmrs.pmrs, pendingMetricRow{
 		MetricName: pmrs.lastMetricName,
-		mr:         mr,
+		mr:         mr,  //todo: 解码后的pmrs.mn为什么不放在这里呢，这样下游就可以重复使用了
 	})  //新增的监控项，加到数组里
 	return nil
 }

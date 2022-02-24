@@ -156,7 +156,7 @@ func MarshalVarUint64(dst []byte, u uint64) []byte {
 }
 
 // MarshalVarUint64s appends marshaled us to dst and returns the result.
-func MarshalVarUint64s(dst []byte, us []uint64) []byte {
+func MarshalVarUint64s(dst []byte, us []uint64) []byte {  //每个字节7位表示长度。如果高位为1，证明还有后续的字节
 	for _, u := range us {
 		if u < 0x80 {
 			// Fast path

@@ -549,7 +549,7 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 	// Search the TSID in the external storage.  // metricName 是未decode之前的完整数据, mn是decode后的数据
 	// This is usually the db from the previous period.  // dst 是 out 参数
 	var err error
-	if db.doExtDB(func(extDB *indexDB) {  // 这里为什么要选择4小时以前的 indexdb 呢？ 是不是搜索索引的时间最少4小时，最多8小时？
+	if db.doExtDB(func(extDB *indexDB) {  //前一个31天的索引数据
 		err = extDB.getTSIDByNameNoCreate(dst, metricName)
 	}) {  // 如果存在 prev db
 		if err == nil {
@@ -565,12 +565,12 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 	// Generate it locally.
 	dst.AccountID = mn.AccountID
 	dst.ProjectID = mn.ProjectID
-	dst.MetricGroupID = xxhash.Sum64(mn.MetricGroup)
+	dst.MetricGroupID = xxhash.Sum64(mn.MetricGroup)  // 以 __name__ 来取hash值
 	if len(mn.Tags) > 0 {
-		dst.JobID = uint32(xxhash.Sum64(mn.Tags[0].Value))
+		dst.JobID = uint32(xxhash.Sum64(mn.Tags[0].Value))  //todo:这个写法太牵强了。排序后，这个字段不一定是job id
 	}
 	if len(mn.Tags) > 1 {
-		dst.InstanceID = uint32(xxhash.Sum64(mn.Tags[1].Value))
+		dst.InstanceID = uint32(xxhash.Sum64(mn.Tags[1].Value))  //todo:太不严谨了
 	}
 	dst.MetricID = generateUniqueMetricID()  // 通过原子加来产生唯一的 metricID
 	return nil
@@ -585,22 +585,22 @@ func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算�
 
 	// Create MetricName -> TSID index.
 	ii.B = append(ii.B, nsPrefixMetricNameToTSID)  // 这个字节表示索引的类型
-	ii.B = mn.Marshal(ii.B)  // 序列化 metric 的数据， 其实是把 mn.MetricGroup 拷贝进去
+	ii.B = mn.Marshal(ii.B)  // 整个metric序列化以后的数据
 	ii.B = append(ii.B, kvSeparatorChar)
 	ii.B = tsid.Marshal(ii.B)  // 上面把数据序列化为存储要求的格式
-	ii.Next()
+	ii.Next()  //产生一个新的item
 
-	// Create MetricID -> MetricName index.  // ??? 为什么同一个主键里面包含很多种不同的数据呢？
+	// Create MetricID -> MetricName index.
 	ii.B = marshalCommonPrefix(ii.B, nsPrefixMetricIDToMetricName, mn.AccountID, mn.ProjectID)
 	ii.B = encoding.MarshalUint64(ii.B, tsid.MetricID)
-	ii.B = mn.Marshal(ii.B)  // ??? 同一个buffer里面，上面追加过的数据，又追加了一次……
+	ii.B = mn.Marshal(ii.B)  //todo:这里的序列化值得优化
 	ii.Next()
 
 	// Create MetricID -> TSID index.
 	ii.B = marshalCommonPrefix(ii.B, nsPrefixMetricIDToTSID, mn.AccountID, mn.ProjectID)
 	ii.B = encoding.MarshalUint64(ii.B, tsid.MetricID)
 	ii.B = tsid.Marshal(ii.B)
-	ii.Next()  // 为什么把几种不同格式的数据，放在同一个buffer呢？
+	ii.Next()
 
 	prefix := kbPool.Get()  // ByteBufferPool
 	prefix.B = marshalCommonPrefix(prefix.B[:0], nsPrefixTagToMetricIDs, mn.AccountID, mn.ProjectID)
@@ -610,7 +610,7 @@ func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算�
 	return db.tb.AddItems(ii.Items)  // 把多个索引放到 indexItem对象中，然后发给table对象
 }
 
-type indexItems struct {  // 相当于把所有的主键都集中在一起存放
+type indexItems struct {  // 相当于把所有的主键都集中在一起存放. 这个类用于索引的序列化
 	B     []byte  //这是一个大数组，用于顺序的存放多个 time series的数据
 	Items [][]byte  // 这个结构引用上面的数据
 
@@ -2631,7 +2631,7 @@ func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID
 	// Add index entry for MetricGroup -> MetricID
 	ii.B = append(ii.B, prefix...)  // prefix 一般是 mn.AccountID, mn.ProjectID
 	ii.B = marshalTagValue(ii.B, nil)
-	ii.B = marshalTagValue(ii.B, mn.MetricGroup)  // ??? 同样的 metricGroup 数据加了若干次，这是为什么呢
+	ii.B = marshalTagValue(ii.B, mn.MetricGroup)  // __name__ -> MetricID
 	ii.B = encoding.MarshalUint64(ii.B, metricID)
 	ii.Next()  // 追加为一个 item
 	ii.addReverseMetricGroupIfNeeded(prefix, mn, metricID)  // graphite 体系的特殊处理
@@ -2644,10 +2644,10 @@ func (ii *indexItems) registerTagIndexes(prefix []byte, mn *MetricName, metricID
 		ii.Next()  // 每个label name + label value形成一个索引 item
 	}
 
-	// Add index entries for composite tags: MetricGroup+tag -> MetricID  // ??? 必须搞懂 MetricGroup 到底是什么
+	// Add index entries for composite tags: MetricGroup+tag -> MetricID  // MetricGroup就是 __name__
 	compositeKey := kbPool.Get()
 	for _, tag := range mn.Tags {
-		compositeKey.B = marshalCompositeTagKey(compositeKey.B[:0], mn.MetricGroup, tag.Key)
+		compositeKey.B = marshalCompositeTagKey(compositeKey.B[:0], mn.MetricGroup, tag.Key)  // __name__ + label_name
 		ii.B = append(ii.B, prefix...)
 		ii.B = marshalTagValue(ii.B, compositeKey.B)
 		ii.B = marshalTagValue(ii.B, tag.Value)
@@ -2661,7 +2661,7 @@ func (ii *indexItems) addReverseMetricGroupIfNeeded(prefix []byte, mn *MetricNam
 	if bytes.IndexByte(mn.MetricGroup, '.') < 0 {
 		// The reverse metric group is needed only for Graphite-like metrics with points.
 		return
-	}
+	}  // __name__ 中有 . 这个字符的时候，特殊处理
 	// This is most likely a Graphite metric like 'foo.bar.baz'.
 	// Store reverse metric name 'zab.rab.oof' in order to speed up search for '*.bar.baz'
 	// when the Graphite wildcard has a suffix matching small number of time series.
@@ -3053,7 +3053,7 @@ func mergeTagToMetricIDsRows(data []byte, items []mergeset.Item) ([]byte, []merg
 	data, items = mergeTagToMetricIDsRowsInternal(data, items, nsPrefixDateTagToMetricIDs)
 	return data, items
 }
-
+   //合并的时候，会回调这个函数
 func mergeTagToMetricIDsRowsInternal(data []byte, items []mergeset.Item, nsPrefix byte) ([]byte, []mergeset.Item) {
 	// Perform quick checks whether items contain rows starting from nsPrefix
 	// based on the fact that items are sorted.

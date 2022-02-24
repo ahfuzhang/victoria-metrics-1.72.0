@@ -35,7 +35,7 @@ type TSID struct {
 	//   memory_usage{datacenter="foo1", job="bar1", instance="baz2:1234"}
 	//   memory_usage{datacenter="foo1", job="bar2", instance="baz1:1234"}
 	//   memory_usage{datacenter="foo2", job="bar1", instance="baz2:1234"}
-	MetricGroupID uint64
+	MetricGroupID uint64  //  __name__字段的hash值
 
 	// JobID is the id of an individual job (aka service)
 	// for the given project.
@@ -57,7 +57,7 @@ type TSID struct {
 	// MetricID is the unique id of the metric (time series).
 	//
 	// All the other TSID fields may be obtained by MetricID.
-	MetricID uint64
+	MetricID uint64  //通过原子加得到的递增的id
 }
 
 // marshaledTSIDSize is the size of marshaled TSID.

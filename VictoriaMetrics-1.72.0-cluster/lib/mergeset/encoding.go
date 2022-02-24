@@ -58,10 +58,10 @@ func (ib *inmemoryBlock) Swap(i, j int) {
 	items[i], items[j] = items[j], items[i]  // 排序的时候，不调整大数组的内容，只是调整items数组的内容。很巧妙，少了很多拷贝
 }
 
-type inmemoryBlock struct {  // 内存中的block是个重要的结构
+type inmemoryBlock struct {  // 内存中的block是个重要的结构，相当于mem table
 	commonPrefix []byte   // block中所有time series的最大公共头
-	data         []byte   // 把所有time sereies序列化后的内存顺序存放。这里的数据很可能来自 items.bin
-	items        []Item   //  记录每个time series在上述大数组中的偏移量。这里的数据很可能来自 lens.bin
+	data         []byte   // 把所有time sereies序列化后的内存顺序存放。最大64KB
+	items        []Item   //  记录每个time series在上述大数组中的偏移量。
 }
 
 func (ib *inmemoryBlock) SizeBytes() int {
@@ -79,7 +79,7 @@ func (ib *inmemoryBlock) updateCommonPrefix() {  // 找出block中所有time ser
 	if len(ib.items) == 0 {
 		return
 	}
-	items := ib.items  //成员为什么要拷贝一次，没看懂？
+	items := ib.items
 	data := ib.data
 	cp := items[0].Bytes(data)  // cp是第0个time series的原始数据
 	if len(cp) == 0 {
@@ -98,7 +98,7 @@ func (ib *inmemoryBlock) updateCommonPrefix() {  // 找出block中所有time ser
 func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数据。找到两个time series的最大的公共头。
 	i := 0
 	if len(a) > len(b) {
-		for i < len(b) && a[i] == b[i] {
+		for i < len(b) && a[i] == b[i] {  //todo: 这个函数使用得非常频繁，未来可以考虑汇编优化
 			i++
 		}
 	} else {
@@ -112,8 +112,8 @@ func commonPrefixLen(a, b []byte) int {  // a,b 是两个time series的原始数
 // Add adds x to the end of ib.
 //
 // false is returned if x isn't added to ib due to block size contraints.
-func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据，前后各加了1字节； x也可能多包含了多种索引的 indexItem 中的结构
-	data := ib.data  // 没看懂这个写法？ 是为了避免并发带来影响？还是为了编译期优化代码？
+func (ib *inmemoryBlock) Add(x []byte) bool {  // x是一个序列化后的 time series数据
+	data := ib.data
 	if len(x)+len(data) > maxInmemoryBlockSize {
 		return false
 	}
@@ -145,7 +145,7 @@ func (ib *inmemoryBlock) sort() {
 	b = b[:0]
 	for i, it := range items {  // 把data数组中的time series拷贝到新数组，然后新数组中的数据都是排序的了。（其实没必要）
 		bLen := len(b)
-		b = append(b, it.String(data)...)
+		b = append(b, it.String(data)...)  //todo:值得优化
 		items[i] = Item{
 			Start: uint32(bLen),
 			End:   uint32(len(b)),
@@ -156,7 +156,7 @@ func (ib *inmemoryBlock) sort() {
 }
 
 // storageBlock represents a block of data on the storage.
-type storageBlock struct {  // items.bin, lens.bin反序列化后的内容
+type storageBlock struct {  // items.bin, lens.bin反序列化后的内容  // 用于存储高度序列化后的 SSTABLE
 	itemsData []byte  // Sorted String Tables （SSTables）
 	lensData  []byte
 }
@@ -257,53 +257,53 @@ func (ib *inmemoryBlock) marshalData(sb *storageBlock, firstItemDst, commonPrefi
 	}
 
 	bbItems := bbPool.Get()
-	bItems := bbItems.B[:0]
+	bItems := bbItems.B[:0]  //保存目的 items 数据的内存buffer
 
 	bbLens := bbPool.Get()
-	bLens := bbLens.B[:0]
+	bLens := bbLens.B[:0]  // 保存目的 lens 数据的内存buffer
 
 	// Marshal items data.
-	xs := encoding.GetUint64s(len(ib.items) - 1)
-	defer encoding.PutUint64s(xs)
+	xs := encoding.GetUint64s(len(ib.items) - 1)  //??? 为什么要减1   猜测是firstItem单独存储了，所以就没必要在序列化中的数据再存储一次
+	defer encoding.PutUint64s(xs)  //  xs 保存两两比较公共前缀后的 异或后的 前缀值
 
-	cpLen := len(ib.commonPrefix)
+	cpLen := len(ib.commonPrefix)  // 公共前缀的长度
 	prevItem := firstItem[cpLen:]
 	prevPrefixLen := uint64(0)
-	for i, it := range ib.items[1:] {
-		it.Start += uint32(cpLen)
-		item := it.Bytes(data)
-		prefixLen := uint64(commonPrefixLen(prevItem, item))
-		bItems = append(bItems, item[prefixLen:]...)
-		xLen := prefixLen ^ prevPrefixLen
-		prevItem = item
-		prevPrefixLen = prefixLen
+	for i, it := range ib.items[1:] {  //从第二个元素开始遍历
+		it.Start += uint32(cpLen)  //偏移到公共前缀之后的位置
+		item := it.Bytes(data)     //这里得到的[]byte就不包含公共前缀的部分
+		prefixLen := uint64(commonPrefixLen(prevItem, item))  //计算第N项和N-1项的公共前缀
+		bItems = append(bItems, item[prefixLen:]...)  //仅仅只把差异的部分拷贝到目的buffer. 为了节约存储空间，差异的部分不存储进去。牛逼！
+		xLen := prefixLen ^ prevPrefixLen  //第一次，与0异或，还是等于原值。异或后，两个整数值前面相同的部分都为0了，数值变得更短，能够便于压缩。
+		prevItem = item  //上次的除去公共前缀的item
+		prevPrefixLen = prefixLen  //上次计算得到的公共前缀
 
-		xs.A[i] = xLen
+		xs.A[i] = xLen  //异或后的公共前缀值
 	}
-	bLens = encoding.MarshalVarUint64s(bLens, xs.A)
-	sb.itemsData = encoding.CompressZSTDLevel(sb.itemsData[:0], bItems, compressLevel)
-
+	bLens = encoding.MarshalVarUint64s(bLens, xs.A)  //对N-1个长度进行序列化
+	sb.itemsData = encoding.CompressZSTDLevel(sb.itemsData[:0], bItems, compressLevel)  //压缩后，写入storageBlock
+         //先两两去掉公共前缀，然后再ZSTD压缩
 	bbItems.B = bItems
 	bbPool.Put(bbItems)
 
 	// Marshal lens data.
 	prevItemLen := uint64(len(firstItem) - cpLen)
-	for i, it := range ib.items[1:] {
-		itemLen := uint64(int(it.End-it.Start) - cpLen)
+	for i, it := range ib.items[1:] {  //前面记录了两两的相对长度，这里记录完整长度.
+		itemLen := uint64(int(it.End-it.Start) - cpLen)  //todo: 完整长度可以推算出来，应该可以不用记录才对
 		xLen := itemLen ^ prevItemLen
 		prevItemLen = itemLen
 
 		xs.A[i] = xLen
 	}
-	bLens = encoding.MarshalVarUint64s(bLens, xs.A)
-	sb.lensData = encoding.CompressZSTDLevel(sb.lensData[:0], bLens, compressLevel)
+	bLens = encoding.MarshalVarUint64s(bLens, xs.A)  //长度信息包含两种，相对长度和总长度
+	sb.lensData = encoding.CompressZSTDLevel(sb.lensData[:0], bLens, compressLevel)  //对长度信息序列化，然后压缩
 
 	bbLens.B = bLens
 	bbPool.Put(bbLens)
 
 	if float64(len(sb.itemsData)) > 0.9*float64(len(ib.data)-len(ib.commonPrefix)*len(ib.items)) {
 		// Bad compression rate. It is cheaper to use plain encoding.
-		ib.marshalDataPlain(sb)
+		ib.marshalDataPlain(sb)  //压缩率不高的时候，选择不压缩
 		return firstItemDst, commonPrefixDst, uint32(len(ib.items)), marshalTypePlain
 	}
 
@@ -543,7 +543,7 @@ func putLensBuffer(lb *lensBuffer) {
 
 func getInmemoryBlock() *inmemoryBlock {
 	select {
-	case ib := <-ibPoolCh:
+	case ib := <-ibPoolCh:  //通过channel来控制对象的总数
 		return ib
 	default:
 		return &inmemoryBlock{}

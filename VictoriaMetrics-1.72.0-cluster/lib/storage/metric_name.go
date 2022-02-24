@@ -18,9 +18,9 @@ import (
 
 const (
 	escapeChar       = 0
-	tagSeparatorChar = 1  //这样一个magic number混在二进制数据里，是什么意思呢???
-	kvSeparatorChar  = 2
-)
+	tagSeparatorChar = 1  //1代表字段之间的分隔符
+	kvSeparatorChar  = 2  //2代表key之间的分隔符
+)  // 通过 bytes.IndexOf来搜索分隔符。使用这种方法而不是使用 length+value，可能是为了节约length的长度。
 
 // Tag represents a (key, value) tag for metric.
 type Tag struct {
@@ -41,7 +41,7 @@ func (tag *Tag) Equal(t *Tag) bool {
 
 // Marshal appends marshaled tag to dst and returns the result.
 func (tag *Tag) Marshal(dst []byte) []byte {  // 对label name + label value进行序列化
-	dst = marshalTagValue(dst, tag.Key)
+	dst = marshalTagValue(dst, tag.Key)   // key的值，后面增加1字节的 byte(1)
 	dst = marshalTagValue(dst, tag.Value)
 	return dst
 }
@@ -71,7 +71,7 @@ func marshalTagValueNoTrailingTagSeparator(dst, src []byte) []byte {
 	return dst[:len(dst)-1]
 }
 
-func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
+func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup，其实就是 __name__ 的内容
 	n1 := bytes.IndexByte(src, escapeChar)
 	n2 := bytes.IndexByte(src, tagSeparatorChar)
 	n3 := bytes.IndexByte(src, kvSeparatorChar)
@@ -82,7 +82,7 @@ func marshalTagValue(dst, src []byte) []byte {  // src传入了 mn.MetricGroup
 		return dst
 	}
 
-	// Slow path.
+	// Slow path.  //如果是vm-insert过来的数据，一般是不会走到下面的逻辑的
 	for _, ch := range src {  //遍历 mn.MetricGroup 中的每个byte
 		switch ch {
 		case escapeChar:
@@ -137,7 +137,7 @@ type MetricName struct {
 	AccountID uint32
 	ProjectID uint32
 
-	MetricGroup []byte  // ??? 这个是干嘛用的？  看起来是原始的metric内容
+	MetricGroup []byte  // 这个字段就是 __name__
 
 	// Tags are optional. They must be sorted by tag Key for canonical view.
 	// Use sortTags method.
@@ -215,7 +215,7 @@ func (mn *MetricName) AddTag(key, value string) {
 }
 
 // AddTagBytes adds new tag to mn with the given key and value.
-func (mn *MetricName) AddTagBytes(key, value []byte) {
+func (mn *MetricName) AddTagBytes(key, value []byte) {  //添加 label_name , label_value
 	if string(key) == string(metricGroupTagKey) {
 		mn.MetricGroup = append(mn.MetricGroup, value...)
 		return
@@ -369,42 +369,42 @@ func (mn *MetricName) String() string {
 //
 // mn.sortTags must be called before calling this function
 // in order to sort and de-duplcate tags.
-func (mn *MetricName) Marshal(dst []byte) []byte {
+func (mn *MetricName) Marshal(dst []byte) []byte {  //把对象进行序列化
 	// Calculate the required size and pre-allocate space in dst
 	dstLen := len(dst)
 	requiredSize := 8 + len(mn.MetricGroup) + 1
 	for i := range mn.Tags {
 		tag := &mn.Tags[i]
 		requiredSize += len(tag.Key) + len(tag.Value) + 2
-	}
+	}  //计算出总共需要多少空间
 	dst = bytesutil.Resize(dst, requiredSize)
 	dst = dst[:dstLen]
 
-	dst = encoding.MarshalUint32(dst, mn.AccountID)
-	dst = encoding.MarshalUint32(dst, mn.ProjectID)
-	dst = marshalTagValue(dst, mn.MetricGroup)
+	dst = encoding.MarshalUint32(dst, mn.AccountID)  // 0~3 AccountID
+	dst = encoding.MarshalUint32(dst, mn.ProjectID)  // 4~7  ProjectID
+	dst = marshalTagValue(dst, mn.MetricGroup)   // 8~N, __name__, 后面增加1字节的 byte(1)
 
 	// Marshal tags.
 	tags := mn.Tags
 	for i := range tags {
 		t := &tags[i]
-		dst = t.Marshal(dst)
+		dst = t.Marshal(dst)  // key, byte(1), value, byte(1)
 	}
-	return dst
+	return dst  //这里序列化完成后，metric的各个字段用 byte(1)分隔
 }
 
-// Unmarshal unmarshals mn from src.
+// Unmarshal unmarshals mn from src.  // 需要仔细看 metricGroup 是怎么搞出来的
 func (mn *MetricName) Unmarshal(src []byte) error {  // 把原始的序列化的[]byte的time series，还原为具体的结构
 	if len(src) < 8 {
 		return fmt.Errorf("too short src: %d bytes; must be at least % bytes", len(src), 8)
 	}
-	mn.AccountID = encoding.UnmarshalUint32(src)
-	mn.ProjectID = encoding.UnmarshalUint32(src[4:])
+	mn.AccountID = encoding.UnmarshalUint32(src)    // 0~3 字节，AccountID
+	mn.ProjectID = encoding.UnmarshalUint32(src[4:])  // 4~7 字节, ProjectID
 	src = src[8:]
 
-	// Unmarshal MetricGroup.
+	// Unmarshal MetricGroup.  // 问题：原始metric数据，在哪里写入了值为1的 byte 呢？
 	var err error
-	src, mn.MetricGroup, err = unmarshalTagValue(mn.MetricGroup[:0], src)
+	src, mn.MetricGroup, err = unmarshalTagValue(mn.MetricGroup[:0], src)  // MetricGroup 的赋值
 	if err != nil {
 		return fmt.Errorf("cannot unmarshal MetricGroup: %w", err)
 	}
@@ -643,21 +643,21 @@ func (mn *MetricName) marshalRaw(dst []byte) []byte {
 	return dst
 }
 
-// UnmarshalRaw unmarshals mn encoded with MarshalMetricNameRaw.
+// UnmarshalRaw unmarshals mn encoded with MarshalMetricNameRaw.  // src是来自vm-insert发送过来的原始数据
 func (mn *MetricName) UnmarshalRaw(src []byte) error {
 	mn.Reset()
 	if len(src) < 4 {
 		return fmt.Errorf("not enough data for decoding accountID; got %d bytes; %X; want at least 4 bytes", len(src), src)
 	}
-	mn.AccountID = encoding.UnmarshalUint32(src)
+	mn.AccountID = encoding.UnmarshalUint32(src)  // 0~3, AccountID
 	src = src[4:]
 	if len(src) < 4 {
 		return fmt.Errorf("not enough data for decoding projectID; got %d bytes; %X; want at least 4 bytes", len(src), src)
 	}
-	mn.ProjectID = encoding.UnmarshalUint32(src)
+	mn.ProjectID = encoding.UnmarshalUint32(src)  // 4~7, ProjectID
 	src = src[4:]
 	for len(src) > 0 {
-		tail, key, err := unmarshalBytesFast(src)
+		tail, key, err := unmarshalBytesFast(src)  // 8~9,长度 ; 9~N, 长度代表的内容
 		if err != nil {
 			return fmt.Errorf("cannot decode key: %w", err)
 		}
@@ -670,9 +670,9 @@ func (mn *MetricName) UnmarshalRaw(src []byte) error {
 		src = tail
 
 		if len(key) == 0 {
-			mn.MetricGroup = append(mn.MetricGroup[:0], value...)
+			mn.MetricGroup = append(mn.MetricGroup[:0], value...)  // 我靠，搞明白了，MetricGroup就是 __name__
 		} else {
-			mn.AddTagBytes(key, value)
+			mn.AddTagBytes(key, value)  //添加 label name , label_value
 		}
 	}
 	return nil
@@ -703,7 +703,7 @@ func unmarshalBytesFast(src []byte) ([]byte, []byte, error) {
 //
 // Tags sorting is quite slow, so try avoiding it by caching mn
 // with sorted tags.
-func (mn *MetricName) sortTags() {
+func (mn *MetricName) sortTags() {  //todo: 我觉得这个实现太复杂了，使用map去重是不是更好？
 	if len(mn.Tags) == 0 {
 		return
 	}

@@ -61,7 +61,7 @@ const maxPartSize = 400e9
 //
 // Such parts are usually frequently accessed, so it is good to cache their
 // contents in OS page cache.
-func maxItemsPerCachedPart() uint64 {
+func maxItemsPerCachedPart() uint64 {  //根据剩余内存计算每个part的最大大小
 	mem := memory.Remaining()
 	// Production data shows that each item occupies ~4 bytes in the compressed part.
 	// It is expected no more than defaultPartsToMerge/2 parts exist
@@ -159,7 +159,7 @@ func (riss *rawItemsShards) Len() int {
 	return n
 }
 
-type rawItemsShard struct {  // 还未写到part的数据
+type rawItemsShard struct {  // 还未写到part的数据。这个相当于mem table， 一个mem table中有多个inmemoryBlock
 	mu            sync.Mutex
 	ibs           []*inmemoryBlock  // 存在多个 inmemoryBlock对象
 	lastFlushTime uint64  // 记录最后一次flush的时间
@@ -186,7 +186,7 @@ func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {  // 未保
 		ibs = append(ibs, ib)
 		ris.ibs = ibs
 	}
-	ib := ibs[len(ibs)-1]  // 取最后一个对象
+	ib := ibs[len(ibs)-1]  // 取最后一个block。相当于顺序追加到最后
 	for _, item := range items {
 		if !ib.Add(item) {  // 调用 inmemoryBlock对象的add方法，其实就是追加到一个大的[]byte中去，通过Item记录位置
 			ib = getInmemoryBlock()  // 添加失败说明内存已经满了，需要再申请一块
@@ -199,7 +199,7 @@ func (ris *rawItemsShard) addItems(tb *Table, items [][]byte) error {  // 未保
 			ris.ibs = ibs
 		}
 	}
-	if len(ibs) >= maxBlocksPerShard {  // 最多512个 inmemoryBlock， 超过这个数量就调用merge方法
+	if len(ibs) >= maxBlocksPerShard {  // 最多512个 inmemoryBlock， 超过这个数量就调用merge方法。也就是超过32MB
 		blocksToFlush = append(blocksToFlush, ibs...)
 		for i := range ibs {
 			ibs[i] = nil
@@ -649,11 +649,11 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {  //�
 	tb.partMergersWG.Add(1)
 	defer tb.partMergersWG.Done()
        // 每15个inmemoryBlock 放到一个 part ?
-	pws := make([]*partWrapper, 0, (len(ibs)+defaultPartsToMerge-1)/defaultPartsToMerge)  // 数组长度为512的时候，pwd数组长度为35
+	pws := make([]*partWrapper, 0, (len(ibs)+defaultPartsToMerge-1)/defaultPartsToMerge)  // 数组长度为512的时候，pws数组长度为35
 	var pwsLock sync.Mutex
 	var wg sync.WaitGroup
 	for len(ibs) > 0 {
-		n := defaultPartsToMerge
+		n := defaultPartsToMerge  //每15个 inmemoryBlock为一组
 		if n > len(ibs) {
 			n = len(ibs)
 		}
@@ -670,12 +670,12 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {  //�
 			pwsLock.Unlock()
 		}(ibs[:n])
 		ibs = ibs[n:]
-	}
+	}  //合并完成后，得到了35个 immutable memory table
 	wg.Wait()  // 这里是阻塞的。也就是说，合并必然影响插入性能
 	if len(pws) > 0 {
 		if err := tb.mergeParts(pws, nil, true); err != nil {  // 然后再把 part 对象 merge 到 table 上去
 			logger.Panicf("FATAL: cannot merge raw parts: %s", err)
-		}
+		}  //把35个immutable memory table再次合并，写入文件
 		if tb.flushCallback != nil {
 			if isFinal {
 				tb.flushCallback()
@@ -697,7 +697,7 @@ func (tb *Table) mergeRawItemsBlocks(ibs []*inmemoryBlock, isFinal bool) {  //�
 		//
 		// Prioritize assisted merges over searches.
 		storagepacelimiter.Search.Inc()  //合并part的时候，告诉查询协程要等待
-		err := tb.mergeExistingParts(false)
+		err := tb.mergeExistingParts(false)  //超过512个part的时候，再次进行合并
 		storagepacelimiter.Search.Dec()
 		if err == nil {
 			atomic.AddUint64(&tb.assistedMerges, 1)
@@ -741,7 +741,7 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {  //合
 			putInmemoryPart(mp)
 		}
 	}()
-
+	//下面对15个inmemoryPart进行合并
 	atomic.AddUint64(&tb.mergesCount, 1)
 	atomic.AddUint64(&tb.activeMerges, 1)
 	defer atomic.AddUint64(&tb.activeMerges, ^uint64(0))
@@ -756,7 +756,7 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {  //合
 
 	// Prepare blockStreamWriter for destination part.
 	bsw := getBlockStreamWriter()
-	mpDst := getInmemoryPart()
+	mpDst := getInmemoryPart()  // flush后的数据，写到了这个对象的ByteBuffer对象中
 	bsw.InitFromInmemoryPart(mpDst)
 
 	// Merge parts.
@@ -774,7 +774,7 @@ func (tb *Table) mergeInmemoryBlocks(ibs []*inmemoryBlock) *partWrapper {  //合
 	p := mpDst.NewPart()
 	return &partWrapper{
 		p:        p,
-		mp:       mpDst,
+		mp:       mpDst,  // mpDst 中是15个 inmemoryBlock 合并后的数据
 		refCount: 1,
 	}
 }
@@ -796,11 +796,11 @@ func (tb *Table) mergeExistingParts(isFinal bool) error {
 	// Divide free space by the max number of concurrent merges.
 	maxOutBytes := n / uint64(mergeWorkersCount)
 	if maxOutBytes > maxPartSize {
-		maxOutBytes = maxPartSize
+		maxOutBytes = maxPartSize  //不能超过400GB
 	}
 
 	tb.partsLock.Lock()
-	pws := getPartsToMerge(tb.parts, maxOutBytes, isFinal)
+	pws := getPartsToMerge(tb.parts, maxOutBytes, isFinal)  //筛选出需要 merge 的part
 	tb.partsLock.Unlock()
 
 	return tb.mergeParts(pws, tb.stopCh, false)
@@ -856,7 +856,7 @@ func (tb *Table) partMerger() error {
 
 var errNothingToMerge = fmt.Errorf("nothing to merge")
 
-// mergeParts merges pws.
+// mergeParts merges pws.  // 把35个 immutable memory table进行合并
 //
 // Merging is immediately stopped if stopCh is closed.
 //
@@ -886,21 +886,21 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	}()
 
 	// Prepare blockStreamReaders for source parts.
-	bsrs := make([]*blockStreamReader, 0, len(pws))
+	bsrs := make([]*blockStreamReader, 0, len(pws))  // 每个part对应着一个 blockStreamReader 对象
 	defer func() {
 		for _, bsr := range bsrs {
 			putBlockStreamReader(bsr)
 		}
 	}()
-	for _, pw := range pws {
+	for _, pw := range pws {  //遍历要合并的part
 		bsr := getBlockStreamReader()
 		if pw.mp != nil {
 			if !isOuterParts {
 				logger.Panicf("BUG: inmemory part must be always outer")
 			}
-			bsr.InitFromInmemoryPart(pw.mp)
+			bsr.InitFromInmemoryPart(pw.mp)  //蛋疼的事情又开始了——如果是inmemoryPart，解压，反序列化，转换成inmemoryBlock
 		} else {
-			if err := bsr.InitFromFilePart(pw.p.path); err != nil {
+			if err := bsr.InitFromFilePart(pw.p.path); err != nil {  //从文件加载
 				return fmt.Errorf("cannot open source part for merging: %w", err)
 			}
 		}
@@ -922,10 +922,10 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 
 	// Prepare blockStreamWriter for destination part.
 	mergeIdx := tb.nextMergeIdx()
-	tmpPartPath := fmt.Sprintf("%s/tmp/%016X", tb.path, mergeIdx)
+	tmpPartPath := fmt.Sprintf("%s/tmp/%016X", tb.path, mergeIdx)  //先写临时文件夹
 	bsw := getBlockStreamWriter()
-	compressLevel := getCompressLevelForPartItems(outItemsCount, outBlocksCount)
-	if err := bsw.InitFromFilePart(tmpPartPath, nocache, compressLevel); err != nil {
+	compressLevel := getCompressLevelForPartItems(outItemsCount, outBlocksCount)  //根据数据量来决定压缩率
+	if err := bsw.InitFromFilePart(tmpPartPath, nocache, compressLevel); err != nil {  //生成目标文件
 		return fmt.Errorf("cannot create destination part %q: %w", tmpPartPath, err)
 	}
 
@@ -967,7 +967,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	}
 
 	// Open the merged part.
-	newP, err := openFilePart(dstPartPath)
+	newP, err := openFilePart(dstPartPath)  //打开合并后的文件
 	if err != nil {
 		return fmt.Errorf("cannot open merged part %q: %w", dstPartPath, err)
 	}
@@ -987,8 +987,8 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	}
 	removedParts := 0
 	tb.partsLock.Lock()
-	tb.parts, removedParts = removeParts(tb.parts, m)
-	tb.parts = append(tb.parts, newPW)
+	tb.parts, removedParts = removeParts(tb.parts, m)  //老的part去掉
+	tb.parts = append(tb.parts, newPW)  // 新的 part 加进去
 	tb.partsLock.Unlock()
 	if removedParts != len(m) {
 		if !isOuterParts {
@@ -1001,7 +1001,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 
 	// Remove partition references from old parts.
 	for _, pw := range pws {
-		pw.decRef()
+		pw.decRef()  //减少老 part 的引用计数
 	}
 
 	d := time.Since(startTime)
@@ -1013,7 +1013,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	return nil
 }
 
-func getCompressLevelForPartItems(itemsCount, blocksCount uint64) int {
+func getCompressLevelForPartItems(itemsCount, blocksCount uint64) int {  //根据数据的条数来决定压缩率
 	// There is no need in using blocksCount here, since mergeset blocks are usually full.
 
 	if itemsCount <= 1<<16 {
@@ -1344,7 +1344,7 @@ func validatePath(pathPrefix, path string) (string, error) {
 	return path, nil
 }
 
-// getPartsToMerge returns optimal parts to merge from pws.
+// getPartsToMerge returns optimal parts to merge from pws.  //筛选出需要聚合的part
 //
 // if isFinal is set, then merge harder.
 //
@@ -1352,11 +1352,11 @@ func validatePath(pathPrefix, path string) (string, error) {
 func getPartsToMerge(pws []*partWrapper, maxOutBytes uint64, isFinal bool) []*partWrapper {
 	pwsRemaining := make([]*partWrapper, 0, len(pws))
 	for _, pw := range pws {
-		if !pw.isInMerge {
+		if !pw.isInMerge {  //过滤掉正在合并的part
 			pwsRemaining = append(pwsRemaining, pw)
 		}
 	}
-	maxPartsToMerge := defaultPartsToMerge
+	maxPartsToMerge := defaultPartsToMerge  //一次最多合并15个part
 	var dst []*partWrapper
 	if isFinal {
 		for len(dst) == 0 && maxPartsToMerge >= finalPartsToMerge {
@@ -1364,7 +1364,7 @@ func getPartsToMerge(pws []*partWrapper, maxOutBytes uint64, isFinal bool) []*pa
 			maxPartsToMerge--
 		}
 	} else {
-		dst = appendPartsToMerge(dst[:0], pwsRemaining, maxPartsToMerge, maxOutBytes)
+		dst = appendPartsToMerge(dst[:0], pwsRemaining, maxPartsToMerge, maxOutBytes)  //筛选出适合merge的part
 	}
 	for _, pw := range dst {
 		if pw.isInMerge {
@@ -1383,7 +1383,7 @@ func getPartsToMerge(pws []*partWrapper, maxOutBytes uint64, isFinal bool) []*pa
 // The 1.7 is good enough for production workloads.
 const minMergeMultiplier = 1.7
 
-// appendPartsToMerge finds optimal parts to merge from src, appends
+// appendPartsToMerge finds optimal parts to merge from src, appends  //筛选合适的适合merge的part
 // them to dst and returns the result.
 func appendPartsToMerge(dst, src []*partWrapper, maxPartsToMerge int, maxOutBytes uint64) []*partWrapper {
 	if len(src) < 2 {
@@ -1399,14 +1399,14 @@ func appendPartsToMerge(dst, src []*partWrapper, maxPartsToMerge int, maxOutByte
 	maxInPartBytes := uint64(float64(maxOutBytes) / minMergeMultiplier)
 	tmp := make([]*partWrapper, 0, len(src))
 	for _, pw := range src {
-		if pw.p.size > maxInPartBytes {
+		if pw.p.size > maxInPartBytes {  //过滤掉已经很大的part
 			continue
 		}
 		tmp = append(tmp, pw)
 	}
 	src = tmp
 
-	// Sort src parts by size.
+	// Sort src parts by size.  // part按照从小到大的顺序排序
 	sort.Slice(src, func(i, j int) bool { return src[i].p.size < src[j].p.size })
 
 	maxSrcParts := maxPartsToMerge
@@ -1421,7 +1421,7 @@ func appendPartsToMerge(dst, src []*partWrapper, maxPartsToMerge int, maxOutByte
 	// Exhaustive search for parts giving the lowest write amplification when merged.
 	var pws []*partWrapper
 	maxM := float64(0)
-	for i := minSrcParts; i <= maxSrcParts; i++ {
+	for i := minSrcParts; i <= maxSrcParts; i++ {  // ??? 猜测是计算空间占用
 		for j := 0; j <= len(src)-i; j++ {
 			a := src[j : j+i]
 			if a[0].p.size*uint64(len(a)) < a[len(a)-1].p.size {

@@ -15,9 +15,9 @@ import (
 
 type blockStreamReader struct {  // 用于 part 文件夹的数据读取
 	// Block contains the current block if Next returned true.
-	Block inmemoryBlock
+	Block inmemoryBlock  // 数据被decode到这个 inmemoryBlock 中
 
-	blockItemIdx int
+	blockItemIdx int  //从0开始，指向第N条 inmemoryBlock 中的数据
 
 	path string
 

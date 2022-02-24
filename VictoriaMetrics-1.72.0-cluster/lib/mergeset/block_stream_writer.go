@@ -70,7 +70,7 @@ func (bsw *blockStreamWriter) InitFromInmemoryPart(ip *inmemoryPart) {
 	// since they are going to be re-compressed during the merge into file-based blocks.
 	bsw.compressLevel = -5 // See https://github.com/facebook/zstd/releases/tag/v1.3.4
 
-	bsw.metaindexWriter = &ip.metaindexData
+	bsw.metaindexWriter = &ip.metaindexData  // 这里是ByteBuffer对象,  写入其实是拷贝到内存中的 []byte 数组
 	bsw.indexWriter = &ip.indexData
 	bsw.itemsWriter = &ip.itemsData
 	bsw.lensWriter = &ip.lensData
@@ -99,7 +99,7 @@ func (bsw *blockStreamWriter) InitFromFilePart(path string, nocache bool, compre
 	}
 
 	indexPath := path + "/index.bin"
-	indexFile, err := filestream.Create(indexPath, nocache)
+	indexFile, err := filestream.Create(indexPath, nocache)  //构造用于写文件的 Writer 对象
 	if err != nil {
 		metaindexFile.MustClose()
 		fs.MustRemoveAll(path)
@@ -176,13 +176,13 @@ func (bsw *blockStreamWriter) WriteBlock(ib *inmemoryBlock) {  // 内存中的�
 
 	// Write itemsData
 	fs.MustWriteData(bsw.itemsWriter, bsw.sb.itemsData)  // 写入 items.bin，包含了完整的 time series的数据
-	bsw.bh.itemsBlockSize = uint32(len(bsw.sb.itemsData))
+	bsw.bh.itemsBlockSize = uint32(len(bsw.sb.itemsData))  // ??? 在这里是否写入了文件呢? 就要看 blockStreamWriter 对象是如何初始化的
 	bsw.bh.itemsBlockOffset = bsw.itemsBlockOffset
 	bsw.itemsBlockOffset += uint64(bsw.bh.itemsBlockSize)
 
 	// Write lensData
 	fs.MustWriteData(bsw.lensWriter, bsw.sb.lensData)  // 写入 lens.bin
-	bsw.bh.lensBlockSize = uint32(len(bsw.sb.lensData))
+	bsw.bh.lensBlockSize = uint32(len(bsw.sb.lensData))  //当使用 InitFromInmemoryPart初始化的时候， MustWriteData其实是拷贝到 ByteBuffer 对象中
 	bsw.bh.lensBlockOffset = bsw.lensBlockOffset
 	bsw.lensBlockOffset += uint64(bsw.bh.lensBlockSize)
 
