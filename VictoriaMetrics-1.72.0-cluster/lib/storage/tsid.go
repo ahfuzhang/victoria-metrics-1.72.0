@@ -57,7 +57,7 @@ type TSID struct {
 	// MetricID is the unique id of the metric (time series).
 	//
 	// All the other TSID fields may be obtained by MetricID.
-	MetricID uint64  //通过原子加得到的递增的id
+	MetricID uint64  //通过time.Now().UnixNano()原子加得到的递增的id
 }
 
 // marshaledTSIDSize is the size of marshaled TSID.

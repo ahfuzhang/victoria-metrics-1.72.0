@@ -2170,7 +2170,7 @@ func (is *indexSearch) updateMetricIDsForTagFilters(metricIDs *uint64set.Set, tf
 		// Fast path: found metricIDs by date range.
 		return nil
 	}
-	if !errors.Is(err, errFallbackToGlobalSearch) {
+	if !errors.Is(err, errFallbackToGlobalSearch) {  //如果每天的索引里面搜索不到，就去全局索引搜索
 		return err
 	}
 
@@ -2361,7 +2361,7 @@ var errFallbackToGlobalSearch = errors.New("fall back from per-day index search 
 const maxDaysForPerDaySearch = 40
 
 func (is *indexSearch) tryUpdatingMetricIDsForDateRange(metricIDs *uint64set.Set, tfs *TagFilters, tr TimeRange, maxMetrics int) error {  //搜索一个tag的过程
-	atomic.AddUint64(&is.db.dateRangeSearchCalls, 1)
+	atomic.AddUint64(&is.db.dateRangeSearchCalls, 1)  //存在一个每天的索引，先在每天的索引里面搜索
 	minDate := uint64(tr.MinTimestamp) / msecPerDay
 	maxDate := uint64(tr.MaxTimestamp) / msecPerDay
 	if minDate > maxDate || maxDate-minDate > maxDaysForPerDaySearch {  //todo: 后面要看看，vm-select是不是会把长周期自动拆成多个40天

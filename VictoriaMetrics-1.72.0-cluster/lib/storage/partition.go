@@ -1550,9 +1550,9 @@ func openParts(pathPrefix1, pathPrefix2, path string) ([]*partWrapper, error) { 
 		return nil, fmt.Errorf("cannot run transactions from %q: %w", path, err)
 	}
 
-	txnDir := path + "/txn"  // 不知道干啥的
+	txnDir := path + "/txn"  // 删除小part，使用大part的时候，把要删除的小part的文件写到这个目录下。避免切换的一瞬间导致大量的数据丢失
 	fs.MustRemoveAll(txnDir)
-	tmpDir := path + "/tmp"  // 不知道干啥的
+	tmpDir := path + "/tmp"  // 写入数据到part的时候，先写到tmp目录，然后再move过去
 	fs.MustRemoveAll(tmpDir)
 	if err := createPartitionDirs(path); err != nil {
 		return nil, fmt.Errorf("cannot create directories for partition %q: %w", path, err)
