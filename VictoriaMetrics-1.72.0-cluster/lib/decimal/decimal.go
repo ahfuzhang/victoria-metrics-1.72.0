@@ -163,16 +163,16 @@ func AppendDecimalToFloat(dst []float64, va []int64, e int16) []float64 {
 // AppendFloatToDecimal converts each item in src to v*10^e and appends
 // each v to dst returning it as va.
 //
-// It tries minimizing each item in dst.
+// It tries minimizing each item in dst.  //把float64的数组，变成int64的数组
 func AppendFloatToDecimal(dst []int64, src []float64) ([]int64, int16) {  // 猜测是数值压缩的算法
 	if len(src) == 0 {
 		return dst, 0
 	}
-	if fastnum.IsFloat64Zeros(src) {
+	if fastnum.IsFloat64Zeros(src) {  //是否全是 0.0
 		dst = fastnum.AppendInt64Zeros(dst, len(src))
 		return dst, 0
 	}
-	if fastnum.IsFloat64Ones(src) {
+	if fastnum.IsFloat64Ones(src) {  //是否全是 1.0
 		dst = fastnum.AppendInt64Ones(dst, len(src))
 		return dst, 0
 	}

@@ -13,7 +13,7 @@ import (
 // All the fields except MetricID are optional. They exist solely for better
 // grouping of related metrics.
 // It is OK if their meaning differ from their naming.
-type TSID struct {
+type TSID struct {  // 32字节
 	// AccountID is the id of the registered account.
 	AccountID uint32
 

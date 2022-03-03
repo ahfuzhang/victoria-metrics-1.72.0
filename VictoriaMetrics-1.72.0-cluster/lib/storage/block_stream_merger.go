@@ -9,9 +9,9 @@ import (
 // blockStreamMerger is used for merging block streams.
 type blockStreamMerger struct {
 	// The current block to work with.
-	Block *Block
+	Block *Block  //指向堆的第一个元素
 
-	bsrHeap blockStreamReaderHeap
+	bsrHeap blockStreamReaderHeap  //用于合并的堆，按照 metricID/tsid 来排序
 
 	// Whether the call to NextBlock must be no-op.
 	nextBlockNoop bool
@@ -31,10 +31,10 @@ func (bsm *blockStreamMerger) reset() {
 }
 
 // Init initializes bsm with the given bsrs.
-func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader) {
+func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader) {  //初始化合并对象，输入是多个 Part 对象
 	bsm.reset()
 	for _, bsr := range bsrs {
-		if bsr.NextBlock() {
+		if bsr.NextBlock() {  //猜测是初始化游标
 			bsm.bsrHeap = append(bsm.bsrHeap, bsr)
 			continue
 		}
@@ -49,7 +49,7 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader) {
 		return
 	}
 
-	heap.Init(&bsm.bsrHeap)
+	heap.Init(&bsm.bsrHeap)  //初始化堆，按照metricID, tsid, 时间来排序
 	bsm.Block = &bsm.bsrHeap[0].Block
 	bsm.nextBlockNoop = true
 }
@@ -58,7 +58,7 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader) {
 //
 // The blocks are sorted by (TDIS, MinTimestamp). Two subsequent blocks
 // for the same TSID may contain overlapped time ranges.
-func (bsm *blockStreamMerger) NextBlock() bool {
+func (bsm *blockStreamMerger) NextBlock() bool {  //以游标的形式遍历所有part
 	if bsm.err != nil {
 		return false
 	}
@@ -114,7 +114,7 @@ func (bsrh *blockStreamReaderHeap) Len() int {
 	return len(*bsrh)
 }
 
-func (bsrh *blockStreamReaderHeap) Less(i, j int) bool {
+func (bsrh *blockStreamReaderHeap) Less(i, j int) bool {  //按照 metricid, tsid这样的顺序来排序
 	x := *bsrh
 	a, b := &x[i].Block.bh, &x[j].Block.bh
 	if a.TSID.MetricID == b.TSID.MetricID {

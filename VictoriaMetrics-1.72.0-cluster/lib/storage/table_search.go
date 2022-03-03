@@ -10,7 +10,7 @@ import (
 )
 
 // tableSearch performs searches in the table.
-type tableSearch struct {
+type tableSearch struct {  //封装搜索逻辑
 	BlockRef *BlockRef
 
 	tb *table

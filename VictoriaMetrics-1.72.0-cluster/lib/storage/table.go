@@ -145,7 +145,7 @@ func (tb *table) CreateSnapshot(snapshotName string) (string, string, error) {
 	logger.Infof("creating table snapshot of %q...", tb.path)
 	startTime := time.Now()
 
-	ptws := tb.GetPartitions(nil)
+	ptws := tb.GetPartitions(nil)  //把partition拷贝出来，默认情况下是1个
 	defer tb.PutPartitions(ptws)
 
 	dstSmallDir := fmt.Sprintf("%s/small/snapshots/%s", tb.path, snapshotName)
@@ -157,7 +157,7 @@ func (tb *table) CreateSnapshot(snapshotName string) (string, string, error) {
 		return "", "", fmt.Errorf("cannot create dir %q: %w", dstBigDir, err)
 	}
 
-	for _, ptw := range ptws {
+	for _, ptw := range ptws {  //遍历每个partition
 		smallPath := dstSmallDir + "/" + ptw.pt.name
 		bigPath := dstBigDir + "/" + ptw.pt.name
 		if err := ptw.pt.CreateSnapshotAt(smallPath, bigPath); err != nil {
@@ -415,7 +415,7 @@ func (tb *table) retentionWatcher() {
 		dst := tb.ptws[:0]
 		for _, ptw := range tb.ptws {
 			if ptw.pt.tr.MaxTimestamp < minTimestamp {
-				ptwsDrop = append(ptwsDrop, ptw)
+				ptwsDrop = append(ptwsDrop, ptw)  //选出超过时间范围的分区，丢弃他们
 			} else {
 				dst = append(dst, ptw)
 			}

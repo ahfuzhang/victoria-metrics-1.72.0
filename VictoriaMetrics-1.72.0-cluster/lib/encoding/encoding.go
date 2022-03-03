@@ -106,7 +106,7 @@ func marshalInt64Array(dst []byte, a []int64, precisionBits uint8) (result []byt
 	if len(a) == 0 {
 		logger.Panicf("BUG: a must contain at least one item")
 	}
-	if isConst(a) {
+	if isConst(a) {  //是否所有值都一样
 		firstValue = a[0]
 		return dst, MarshalTypeConst, firstValue
 	}
@@ -272,7 +272,7 @@ func EnsureNonDecreasingSequence(a []int64, vMin, vMax int64) {
 }
 
 // isConst returns true if a contains only equal values.
-func isConst(a []int64) bool {
+func isConst(a []int64) bool {  //如果所有值都一样
 	if len(a) == 0 {
 		return false
 	}
@@ -285,7 +285,7 @@ func isConst(a []int64) bool {
 		return true
 	}
 	v1 := a[0]
-	for _, v := range a {
+	for _, v := range a {  //todo: 可以用SIMD优化
 		if v != v1 {
 			return false
 		}

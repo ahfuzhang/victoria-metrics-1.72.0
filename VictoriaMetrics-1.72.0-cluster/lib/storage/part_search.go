@@ -14,7 +14,7 @@ import (
 
 // partSearch represents blocks stream for the given search args
 // passed to Init.
-type partSearch struct {
+type partSearch struct {  //封装在part中搜索的能力
 	// BlockRef contains the reference to the found block after NextBlock call.
 	BlockRef BlockRef
 

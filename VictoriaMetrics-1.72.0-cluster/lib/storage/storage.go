@@ -312,7 +312,7 @@ func (s *Storage) DebugFlush() {
 }
 
 // CreateSnapshot creates snapshot for s and returns the snapshot name.
-func (s *Storage) CreateSnapshot() (string, error) {
+func (s *Storage) CreateSnapshot() (string, error) {  //创建快照
 	logger.Infof("creating Storage snapshot for %q...", s.path)
 	startTime := time.Now()
 

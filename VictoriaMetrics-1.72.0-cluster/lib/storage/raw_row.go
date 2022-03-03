@@ -9,9 +9,9 @@ import (
 )
 
 // rawRow reperesents raw timeseries row.
-type rawRow struct {  // 插入数据文件的原始数据格式
+type rawRow struct {  // 插入数据文件的原始数据格式, 一共56字节
 	// TSID is time series id.
-	TSID TSID
+	TSID TSID  //32字节
 
 	// Timestamp is unix timestamp in milliseconds.
 	Timestamp int64
@@ -32,7 +32,7 @@ type rawRowsMarshaler struct {  // 用于序列化 tsid + timestamp + value的�
 	auxTimestamps  []int64  // 在连续多条TSID相同的情况下， timestamp的数据直接追加到这里
 	auxValues      []int64
 	auxFloatValues []float64
-}
+}  //存储同一个TSID的数据，临时存放
 
 func (rrm *rawRowsMarshaler) reset() {
 	rrm.bsw.reset()
@@ -122,7 +122,7 @@ func (rrm *rawRowsMarshaler) marshalToInmemoryPart(mp *inmemoryPart, rows []rawR
 		rrm.auxValues, scale = decimal.AppendFloatToDecimal(rrm.auxValues[:0], rrm.auxFloatValues)
 		tmpBlock.Init(tsid, rrm.auxTimestamps, rrm.auxValues, scale, precisionBits)  // 初始化block对象
 		rrm.bsw.WriteExternalBlock(tmpBlock, ph, &rowsMerged)
-
+			//切换到存储下一个TSID的数据
 		tsid = &r.TSID  // 记录上一次产生的TSID
 		precisionBits = r.PrecisionBits
 		rrm.auxTimestamps = append(rrm.auxTimestamps[:0], r.Timestamp)

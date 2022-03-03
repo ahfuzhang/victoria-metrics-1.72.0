@@ -20,20 +20,20 @@ const (
 )
 
 // Block represents a block of time series values for a single TSID.
-type Block struct {  // 数据部分的block对象
+type Block struct {  // 数据部分的block对象   // 内存中的block对象
 	bh blockHeader
 
 	// nextIdx is the next index for reading timestamps and values.
 	nextIdx int
 
 	timestamps []int64  // 初始化的时候，拷贝到这个缓冲区
-	values     []int64
+	values     []int64  // ??? 为什么value变成了int64, 不是float64吗?
 
 	// Marshaled representation of block header.
-	headerData []byte
+	headerData []byte  // block header序列化后的数据
 
 	// Marshaled representation of timestamps.
-	timestampsData []byte
+	timestampsData []byte  //序列化后的数据
 
 	// Marshaled representation of values.
 	valuesData []byte
@@ -147,7 +147,7 @@ func (b *Block) tooBig() bool {
 	return false
 }
 
-func (b *Block) deduplicateSamplesDuringMerge() {
+func (b *Block) deduplicateSamplesDuringMerge() {  //需要重点看，数据去重逻辑
 	if !isDedupEnabled() {  // 参数配置里面，是否需要去重
 		// Deduplication is disabled
 		return

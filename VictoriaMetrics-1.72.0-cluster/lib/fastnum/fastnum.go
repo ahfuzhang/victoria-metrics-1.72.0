@@ -101,7 +101,7 @@ func isInt64Data(a, data []int64) bool {
 	return true
 }
 
-func isFloat64Data(a, data []float64) bool {
+func isFloat64Data(a, data []float64) bool {  //相当于以 memcmp() 的方式来批量比较数据
 	if len(a) == 0 {
 		return true
 	}
@@ -149,8 +149,8 @@ var (
 		return a
 	}()
 
-	float64Zeros [8 * 1024]float64
-	float64Ones  = func() (a [8 * 1024]float64) {
+	float64Zeros [8 * 1024]float64  // 1024个 0
+	float64Ones  = func() (a [8 * 1024]float64) {  // 1024个1
 		for i := 0; i < len(a); i++ {
 			a[i] = 1
 		}

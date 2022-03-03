@@ -75,17 +75,17 @@ const finalPartsToMerge = 3
 // The number of shards for rawRow entries per partition.
 //
 // Higher number of shards reduces CPU contention and increases the max bandwidth on multi-core systems.
-var rawRowsShardsPerPartition = (cgroup.AvailableCPUs() + 7) / 8  //如果是10个核，这个值等于2; 如果是16核，等于3
+var rawRowsShardsPerPartition = (cgroup.AvailableCPUs() + 7) / 8  //如果是10个核，这个值等于2; 如果是16核，等于2
 
 // getMaxRawRowsPerShard returns the maximum number of rows that haven't been converted into parts yet.
 func getMaxRawRowsPerShard() int {
-	maxRawRowsPerPartitionOnce.Do(func() {
+	maxRawRowsPerPartitionOnce.Do(func() {  //假设允许 120gb内存，则这里是50万条
 		n := memory.Allowed() / rawRowsShardsPerPartition / 256 / int(unsafe.Sizeof(rawRow{}))
 		if n < 1e4 {
 			n = 1e4  // 最小1万
 		}
 		if n > 500e3 {
-			n = 500e3
+			n = 500e3  //最大50万
 		}
 		maxRawRowsPerPartition = n
 	})
@@ -180,7 +180,7 @@ type partWrapper struct {
 	p *part
 
 	// non-nil if the part is inmemoryPart.
-	mp *inmemoryPart
+	mp *inmemoryPart  // 这个字段不为nil，则是inmemoryPart； 否则就是file part
 
 	// Whether the part is in merge now.
 	isInMerge bool  //是否正在合并
@@ -443,7 +443,7 @@ type rawRowsShards struct {
 	shardIdx uint32  // 通过原子加来确定使用哪个分桶
 
 	// Shards reduce lock contention when adding rows on multi-CPU systems.
-	shards []rawRowsShard  // 通过分桶来减少锁竞争
+	shards []rawRowsShard  // 通过分桶来减少锁竞争, 16核就是2个桶
 }
 
 func (rrss *rawRowsShards) init() {
@@ -484,7 +484,7 @@ func (rrs *rawRowsShard) addRows(pt *partition, rows []rawRow) {  // 在具体�
 
 	rrs.mu.Lock()
 	if cap(rrs.rows) == 0 {
-		n := getMaxRawRowsPerShard()
+		n := getMaxRawRowsPerShard()  // 1万~50万行
 		rrs.rows = make([]rawRow, 0, n)
 	}
 	maxRowsCount := cap(rrs.rows)
@@ -507,7 +507,7 @@ func (rrs *rawRowsShard) addRows(pt *partition, rows []rawRow) {  // 在具体�
 
 func (pt *partition) flushRowsToParts(rows []rawRow) {  // 把 []rawRow 数组进行 flush操作
 	maxRows := getMaxRawRowsPerShard()  // 最少1万个 datapoint
-	var wg sync.WaitGroup
+	var wg sync.WaitGroup  // 120GB内存的时候，maxRows为50万
 	for len(rows) > 0 {  // 分成N组，开N个协程来 flush
 		n := maxRows
 		if n > len(rows) {
@@ -558,7 +558,7 @@ func (pt *partition) addRowsPart(rows []rawRow) {  //在协程中执行，rows�
 
 	pt.partsLock.Lock()
 	pt.smallParts = append(pt.smallParts, pw)
-	ok := len(pt.smallParts) <= maxSmallPartsPerPartition
+	ok := len(pt.smallParts) <= maxSmallPartsPerPartition  //最多允许256个small part
 	pt.partsLock.Unlock()
 	if ok {
 		return
@@ -720,7 +720,7 @@ func (pt *partition) flushRawRows(isFinal bool) {
 
 func (rrss *rawRowsShards) flush(pt *partition, isFinal bool) {
 	var rowsToFlush []rawRow  //协程中1s触发一次
-	for i := range rrss.shards {  //遍历每个桶
+	for i := range rrss.shards {  //遍历每个桶，把数据拷贝到一起
 		rowsToFlush = rrss.shards[i].appendRawRowsToFlush(rowsToFlush, pt, isFinal)
 	}
 	pt.flushRowsToParts(rowsToFlush)  //把所有桶的数据进行合并
@@ -1015,17 +1015,17 @@ func (pt *partition) mergeBigParts(isFinal bool) error {
 	return pt.mergeParts(pws, pt.stopCh)
 }
 
-func (pt *partition) mergeSmallParts(isFinal bool) error {  //合并小的 part
+func (pt *partition) mergeSmallParts(isFinal bool) error {  //合并小的 part(超过256个)
 	// Try merging small parts to a big part at first.  //也作为合并协程中的回调函数
 	maxBigPartOutBytes := getMaxOutBytes(pt.bigPartsPath, bigMergeWorkersCount)
 	pt.partsLock.Lock()
-	pws, needFreeSpace := getPartsToMerge(pt.smallParts, maxBigPartOutBytes, isFinal)
+	pws, needFreeSpace := getPartsToMerge(pt.smallParts, maxBigPartOutBytes, isFinal)  //选出需要merge的part
 	pt.partsLock.Unlock()
 	atomicSetBool(&pt.bigMergeNeedFreeDiskSpace, needFreeSpace)
 
 	outSize := getPartsSize(pws)
 	if outSize > maxSmallPartSize() {
-		// Merge small parts to a big part.
+		// Merge small parts to a big part.  //超过一定的大小就认为是大part
 		return pt.mergeParts(pws, pt.stopCh)
 	}
 
@@ -1046,7 +1046,7 @@ func (pt *partition) mergeSmallParts(isFinal bool) error {  //合并小的 part
 	return pt.mergeParts(pws, pt.stopCh)
 }
 
-func (pt *partition) releasePartsToMerge(pws []*partWrapper) {
+func (pt *partition) releasePartsToMerge(pws []*partWrapper) {  //合并中的part，合并完成后，修改合并状态
 	pt.partsLock.Lock()
 	for _, pw := range pws {
 		if !pw.isInMerge {
@@ -1115,7 +1115,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 		// Nothing to merge.
 		return errNothingToMerge
 	}
-	defer pt.releasePartsToMerge(pws)
+	defer pt.releasePartsToMerge(pws)  //合并标志置为false
 
 	startTime := time.Now()
 
@@ -1133,7 +1133,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 		} else {
 			if err := bsr.InitFromFilePart(pw.p.path); err != nil {  //打开目录下的四个 .bin 文件
 				return fmt.Errorf("cannot open source part for merging: %w", err)
-			}
+			}  //??? 为什么file part 还要再打开一次?
 		}
 		bsrs = append(bsrs, bsr)
 	}
@@ -1177,7 +1177,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 		atomic.AddUint64(&pt.smallMergesCount, 1)
 		atomic.AddUint64(&pt.activeSmallMerges, 1)
 	}
-	retentionDeadline := timestampFromTime(startTime) - pt.retentionMsecs
+	retentionDeadline := timestampFromTime(startTime) - pt.retentionMsecs  //支持的时间范围
 	err := mergeBlockStreams(&ph, bsw, bsrs, stopCh, dmis, retentionDeadline, rowsMerged, rowsDeleted)
 	if isBigPart {
 		atomic.AddUint64(&pt.activeBigMerges, ^uint64(0))  //减1， 等同于 atomic.AddInt64(&pt.activeBigMerges, -1)
@@ -1223,7 +1223,7 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	// Run the created transaction.
 	if err := runTransaction(&pt.snapshotLock, pt.smallPartsPath, pt.bigPartsPath, txnPath); err != nil {
 		return fmt.Errorf("cannot execute transaction %q: %w", txnPath, err)
-	}  //todo: 我觉得有点多余。VM连WAL都没有，搞啥事务？可靠性不是在这里来保障的
+	}
 
 	var newPW *partWrapper
 	var newPSize uint64
@@ -1271,10 +1271,10 @@ func (pt *partition) mergeParts(pws []*partWrapper, stopCh <-chan struct{}) erro
 	}
 
 	d := time.Since(startTime)
-	if d > 30*time.Second {
+	if d > 30*time.Second {  //合并时间超过30秒会打日志
 		logger.Infof("merged %d rows across %d blocks in %.3f seconds at %d rows/sec to %q; sizeBytes: %d",
 			outRowsCount, outBlocksCount, d.Seconds(), int(float64(outRowsCount)/d.Seconds()), dstPartPath, newPSize)
-	}
+	}  //todo: 应该上报合并时间
 
 	return nil
 }
@@ -1406,10 +1406,10 @@ func getPartsToMerge(pws []*partWrapper, maxOutBytes uint64, isFinal bool) ([]*p
 	pwsRemaining := make([]*partWrapper, 0, len(pws))
 	for _, pw := range pws {
 		if !pw.isInMerge {
-			pwsRemaining = append(pwsRemaining, pw)
+			pwsRemaining = append(pwsRemaining, pw)  // 跳过合并中的part
 		}
 	}
-	maxPartsToMerge := defaultPartsToMerge
+	maxPartsToMerge := defaultPartsToMerge  //默认合并15个part
 	var pms []*partWrapper
 	needFreeSpace := false
 	if isFinal {

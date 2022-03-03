@@ -20,7 +20,7 @@ func mergeBlockStreams(ph *partHeader, bsw *blockStreamWriter, bsrs []*blockStre
 	ph.Reset()
 
 	bsm := bsmPool.Get().(*blockStreamMerger)  //todo: 应该可以封装mergeBlockStreamsInternal为blockStreamMerger对象的方法
-	bsm.Init(bsrs)
+	bsm.Init(bsrs)  //多个part建立堆，用metricID/时间戳 来排序
 	err := mergeBlockStreamsInternal(ph, bsw, bsm, stopCh, dmis, retentionDeadline, rowsMerged, rowsDeleted)
 	bsm.reset()
 	bsmPool.Put(bsm)
@@ -57,7 +57,7 @@ func mergeBlockStreamsInternal(ph *partHeader, bsw *blockStreamWriter, bsm *bloc
 			atomic.AddUint64(rowsDeleted, uint64(bsm.Block.bh.RowsCount))
 			continue
 		}
-		if bsm.Block.bh.MaxTimestamp < retentionDeadline {
+		if bsm.Block.bh.MaxTimestamp < retentionDeadline {  // retentionDeadline 是31天前的时间点
 			// Skip blocks out of the given retention.
 			atomic.AddUint64(rowsDeleted, uint64(bsm.Block.bh.RowsCount))
 			continue
@@ -130,7 +130,7 @@ func mergeBlockStreamsInternal(ph *partHeader, bsw *blockStreamWriter, bsm *bloc
 	return nil
 }
 
-// mergeBlocks merges ib1 and ib2 to ob.
+// mergeBlocks merges ib1 and ib2 to ob.  //合并TSID相同的两个block
 func mergeBlocks(ob, ib1, ib2 *Block, retentionDeadline int64, rowsDeleted *uint64) {
 	ib1.assertMergeable(ib2)
 	ib1.assertUnmarshaled()

@@ -22,7 +22,7 @@ type blockStreamWriter struct {
 	// Use io.Writer type for timestampsWriter and valuesWriter
 	// in order to remove I2I conversion in WriteExternalBlock
 	// when passing them to fs.MustWriteData
-	timestampsWriter io.Writer
+	timestampsWriter io.Writer  //序列化的时候，数据会写入类似的 writer 对象中去
 	valuesWriter     io.Writer
 
 	indexWriter     filestream.WriteCloser
@@ -196,7 +196,7 @@ func (bsw *blockStreamWriter) WriteExternalBlock(b *Block, ph *partHeader, rowsM
 		atomic.AddUint64(&timestampsBlocksMerged, 1)
 		atomic.AddUint64(&timestampsBytesSaved, uint64(len(timestampsData)))
 	}
-	bsw.indexData = append(bsw.indexData, headerData...)
+	bsw.indexData = append(bsw.indexData, headerData...)  //block headder追加进去
 	bsw.mr.RegisterBlockHeader(&b.bh)
 	if len(bsw.indexData) >= maxBlockSize {
 		bsw.flushIndexData()

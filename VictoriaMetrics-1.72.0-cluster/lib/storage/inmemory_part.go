@@ -11,12 +11,12 @@ import (
 type inmemoryPart struct {
 	ph partHeader
 
-	timestampsData bytesutil.ByteBuffer
+	timestampsData bytesutil.ByteBuffer  //这里的数据都是序列化过，然后经过ZSTD压缩的
 	valuesData     bytesutil.ByteBuffer
 	indexData      bytesutil.ByteBuffer
 	metaindexData  bytesutil.ByteBuffer
 
-	creationTime uint64
+	creationTime uint64  //创建的时间
 }
 
 // Reset resets mp.

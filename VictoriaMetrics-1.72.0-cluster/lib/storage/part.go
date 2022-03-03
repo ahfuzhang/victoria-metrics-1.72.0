@@ -151,7 +151,7 @@ type indexBlockCache struct {
 	requests uint64
 	misses   uint64
 
-	m  map[uint64]*indexBlockCacheEntry  //以偏移量为key
+	m  map[uint64]*indexBlockCacheEntry  //以偏移量为key, value为blockHeader数组
 	mu sync.RWMutex
 
 	cleanerStopCh chan struct{}
@@ -200,14 +200,14 @@ func (ibc *indexBlockCache) cleaner() {
 	}
 }
 
-func (ibc *indexBlockCache) cleanByTimeout() {
+func (ibc *indexBlockCache) cleanByTimeout() {  // 每30秒执行一次
 	currentTime := fasttime.UnixTimestamp()
 	ibc.mu.Lock()
 	for k, ibe := range ibc.m {
 		// Delete items accessed more than two minutes ago.
 		// This time should be enough for repeated queries.
 		if currentTime-atomic.LoadUint64(&ibe.lastAccessTime) > 2*60 {
-			delete(ibc.m, k)
+			delete(ibc.m, k)  //超过120秒的key会被删除掉
 		}
 	}
 	ibc.mu.Unlock()
