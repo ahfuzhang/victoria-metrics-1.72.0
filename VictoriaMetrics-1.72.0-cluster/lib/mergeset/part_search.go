@@ -23,7 +23,7 @@ type partSearch struct {  //类似游标的设计方法，成员保存了当前�
 	mrs []metaindexRow  // 这个数组直接复制 part 对象中的对应数组
        // 数组的 firstItem字段是排序的，因此可以根据firstItem来做二分查找
 	// The remaining block headers to scan in the current metaindexRow.
-	bhs []blockHeader  // 当前扫描到的 metaindexRow中的 blockHeader 数组
+	bhs []blockHeader  // 当前扫描到的 metaindexRow中的 blockHeader 数组, aka indexBlock
 
 	idxbCache *indexBlockCache  // indexBlock对象的fastcache, 以 metaindexRow中的偏移量信息为key.  字段内容来自part对象
 	ibCache   *inmemoryBlockCache  // 这里在一个大 []byte 数组里面二分查找。 每个inmemoryBlock对象是64KB.  字段内容来自part对象
@@ -295,7 +295,7 @@ func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {  /
 func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {  //根据blockHeader，加载数据到内存
 	var ibKey inmemoryBlockCacheKey
 	ibKey.Init(bh)  // 以偏移量作为cache的key
-	ib := ps.ibCache.Get(ibKey)
+	ib := ps.ibCache.Get(ibKey)  //猜测，拷贝对象的引用，可以提升CPU cache命中率
 	if ib != nil {
 		return ib, nil
 	}

@@ -504,7 +504,7 @@ func (tb *Table) startRawItemsFlusher() {
 }
 
 func (tb *Table) rawItemsFlusher() {
-	ticker := time.NewTicker(rawItemsFlushInterval)
+	ticker := time.NewTicker(rawItemsFlushInterval)  //每秒执行一次
 	defer ticker.Stop()
 	for {
 		select {
@@ -628,7 +628,7 @@ func (ris *rawItemsShard) appendBlocksToFlush(dst []*inmemoryBlock, tb *Table, i
 	}
 
 	ris.mu.Lock()
-	if isFinal || currentTime-ris.lastFlushTime > uint64(flushSeconds) {
+	if isFinal || currentTime-ris.lastFlushTime > uint64(flushSeconds) {  //积累了两秒数据，才会进入flush
 		ibs := ris.ibs
 		dst = append(dst, ibs...)
 		for i := range ibs {

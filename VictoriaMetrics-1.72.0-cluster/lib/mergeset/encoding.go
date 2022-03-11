@@ -58,7 +58,7 @@ func (ib *inmemoryBlock) Swap(i, j int) {
 	items[i], items[j] = items[j], items[i]  // 排序的时候，不调整大数组的内容，只是调整items数组的内容。很巧妙，少了很多拷贝
 }
 
-type inmemoryBlock struct {  // 内存中的block是个重要的结构，相当于mem table
+type inmemoryBlock struct {  // 内存中的block是个重要的结构，相当于mem table。 或者是从磁盘加载到内存中的block
 	commonPrefix []byte   // block中所有time series的最大公共头
 	data         []byte   // 把所有time sereies序列化后的内存顺序存放。最大64KB
 	items        []Item   //  记录每个time series在上述大数组中的偏移量。
@@ -145,7 +145,7 @@ func (ib *inmemoryBlock) sort() {
 	b = b[:0]
 	for i, it := range items {  // 把data数组中的time series拷贝到新数组，然后新数组中的数据都是排序的了。（其实没必要）
 		bLen := len(b)
-		b = append(b, it.String(data)...)  //todo:值得优化
+		b = append(b, it.String(data)...)  //todo:值得优化。排序item数据就好了，data数据不必重新排序
 		items[i] = Item{
 			Start: uint32(bLen),
 			End:   uint32(len(b)),

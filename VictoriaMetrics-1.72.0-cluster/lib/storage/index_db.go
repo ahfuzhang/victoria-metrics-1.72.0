@@ -80,7 +80,7 @@ type indexDB struct {
 
 	mustDrop uint64  // 当切换indexdb的时候，prev的数据库会被打上这个标记
 
-	name string
+	name string  // unixnano()原子加后的十六进制值
 	tb   *mergeset.Table  // table 对象
 
 	extDB     *indexDB   // 存储前一个31天的索引
@@ -458,7 +458,7 @@ func (is *indexSearch) GetOrCreateTSIDByName(dst *TSID, metricName []byte) error
 	// This should improve insertion performance for big batches
 	// of new time series.
 	if is.tsidByNameMisses < 100 {
-		err := is.getTSIDByMetricName(dst, metricName)  // 查询的时候是否会顺表创建索引呢？
+		err := is.getTSIDByMetricName(dst, metricName)
 		if err == nil {
 			is.tsidByNameMisses = 0
 			return nil
@@ -577,10 +577,10 @@ func (db *indexDB) generateTSID(dst *TSID, metricName []byte, mn *MetricName) er
 }
 
 func (db *indexDB) createIndexes(tsid *TSID, mn *MetricName) error {  //计算得到新的TSID后，创建索引
-	// The order of index items is important.  // ???? 为什么呢？索引只是顺序的追加到一个大buffer，并未看见建立任何查找结构啊
+	// The order of index items is important.
 	// It guarantees index consistency.  // 它保证了索引的一致性
 
-	ii := getIndexItems()  // 从内存池获取 indexItems 对象. ?? 为什么这里没调用reset方法？
+	ii := getIndexItems()  // 从内存池获取 indexItems 对象.
 	defer putIndexItems(ii)
 
 	// Create MetricName -> TSID index.

@@ -14,7 +14,7 @@ import (
 
 type partHeader struct {  // meta.json对应的结构
 	// The number of items the part contains.
-	itemsCount uint64
+	itemsCount uint64    //一般是索引的数量
 
 	// The number of blocks the part contains.
 	blocksCount uint64

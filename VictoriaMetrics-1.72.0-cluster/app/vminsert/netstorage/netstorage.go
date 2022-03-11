@@ -104,7 +104,7 @@ var closedCh = func() <-chan struct{} {
 	return ch
 }()
 
-func (sn *storageNode) run(stopCh <-chan struct{}, snIdx int) {
+func (sn *storageNode) run(stopCh <-chan struct{}, snIdx int) {  //在独立协程中执行
 	replicas := *replicationFactor
 	if replicas <= 0 {
 		replicas = 1

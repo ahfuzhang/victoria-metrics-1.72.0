@@ -59,8 +59,8 @@ type part struct {  // 所有的time series应该是排序后存储的，每个p
 	itemsFile fs.MustReadAtCloser  //  items.bin
 	lensFile  fs.MustReadAtCloser  // lens.bin
 
-	idxbCache *indexBlockCache  // 从 index.bin中加载的数据，放在cache里面
-	ibCache   *inmemoryBlockCache  // 以偏移量为key
+	idxbCache *indexBlockCache  // 从 index.bin中加载的数据，放在cache里面  //两级缓存。这一级缓存indexBlock
+	ibCache   *inmemoryBlockCache  // 以偏移量为key  //  这一级缓存 block
 }
 
 func openFilePart(path string) (*part, error) {  // 打开具体的一个part
@@ -105,7 +105,7 @@ func newPart(ph *partHeader, path string, size uint64, metaindexReader filestrea
 	var p part
 	p.path = path  // path为空字符串，说明是一个 inmemory part
 	p.size = size
-	p.mrs = mrs  // []metaindexRow 数组的内容
+	p.mrs = mrs  // []metaindexRow 数组的内容，数组按照firstItem进行排序
 
 	p.indexFile = indexFile  // 三个内存映射文件
 	p.itemsFile = itemsFile
@@ -133,7 +133,7 @@ func (p *part) MustClose() {
 	p.ibCache.MustClose()
 }
 
-type indexBlock struct {  // 可能是 index 的块结构，内容来自 index.bin 文件
+type indexBlock struct {  // 内容来自 index.bin 文件
 	bhs []blockHeader  // 按照 first item排序的数组，可用于二分查找
 }
 
@@ -151,12 +151,12 @@ type indexBlockCache struct {  //这个cache不是 fastcache，看来还要仔�
 	// aligned to 8 bytes on 32-bit architectures.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
 	requests uint64
-	misses   uint64
+	misses   uint64  // 总的缓存没命中的次数
 
-	m  map[uint64]*indexBlockCacheEntry
+	m  map[uint64]*indexBlockCacheEntry  //以偏移量为key, value为 indexBlock 对象
 	mu sync.RWMutex
 
-	perKeyMisses     map[uint64]int
+	perKeyMisses     map[uint64]int  // 猜测是记录没有命中的数据，120秒清理一次
 	perKeyMissesLock sync.Mutex
 
 	cleanerStopCh chan struct{}
@@ -167,7 +167,7 @@ type indexBlockCacheEntry struct {
 	// Atomically updated counters must go first in the struct, so they are properly
 	// aligned to 8 bytes on 32-bit architectures.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
-	lastAccessTime uint64
+	lastAccessTime uint64  //记录最后一次访问时间
 
 	idxb *indexBlock
 }
@@ -212,7 +212,7 @@ func (idxbc *indexBlockCache) cleaner() {
 	}
 }
 
-func (idxbc *indexBlockCache) cleanByTimeout() {
+func (idxbc *indexBlockCache) cleanByTimeout() {  //删除超过120秒的item
 	currentTime := fasttime.UnixTimestamp()
 	idxbc.mu.Lock()
 	for k, idxbe := range idxbc.m {
@@ -225,7 +225,7 @@ func (idxbc *indexBlockCache) cleanByTimeout() {
 	idxbc.mu.Unlock()
 }
 
-func (idxbc *indexBlockCache) Get(k uint64) *indexBlock {
+func (idxbc *indexBlockCache) Get(k uint64) *indexBlock {  //在缓存中查询
 	atomic.AddUint64(&idxbc.requests, 1)
 	idxbc.mu.RLock()
 	idxbe := idxbc.m[k]
@@ -234,7 +234,7 @@ func (idxbc *indexBlockCache) Get(k uint64) *indexBlock {
 	if idxbe != nil {
 		currentTime := fasttime.UnixTimestamp()
 		if atomic.LoadUint64(&idxbe.lastAccessTime) != currentTime {
-			atomic.StoreUint64(&idxbe.lastAccessTime, currentTime)
+			atomic.StoreUint64(&idxbe.lastAccessTime, currentTime)  //更新最后一次查询时间
 		}
 		return idxbe.idxb
 	}
@@ -246,9 +246,9 @@ func (idxbc *indexBlockCache) Get(k uint64) *indexBlock {
 }
 
 // Put puts idxb under the key k into idxbc.
-func (idxbc *indexBlockCache) Put(k uint64, idxb *indexBlock) {
+func (idxbc *indexBlockCache) Put(k uint64, idxb *indexBlock) {  //写入缓存
 	idxbc.perKeyMissesLock.Lock()
-	doNotCache := idxbc.perKeyMisses[k] == 1
+	doNotCache := idxbc.perKeyMisses[k] == 1  //至少被查过两次，才会缓存
 	idxbc.perKeyMissesLock.Unlock()
 	if doNotCache {
 		// Do not cache ib if it has been requested only once (aka one-time-wonders items).
@@ -257,7 +257,7 @@ func (idxbc *indexBlockCache) Put(k uint64, idxb *indexBlock) {
 	}
 
 	idxbc.mu.Lock()
-	// Remove superfluous entries.
+	// Remove superfluous entries.  //最多允许缓存N条，超过了就要淘汰
 	if overflow := len(idxbc.m) - getMaxCachedIndexBlocksPerPart(); overflow > 0 {
 		// Remove 10% of items from the cache.
 		overflow = int(float64(len(idxbc.m)) * 0.1)
@@ -331,7 +331,7 @@ type inmemoryBlockCache struct {  // key为偏移量， value为 inmemoryBlock�
 }
 
 type inmemoryBlockCacheKey struct {
-	itemsBlockOffset uint64  // 以偏移量作为cache的key
+	itemsBlockOffset uint64  // 以偏移量作为cache的key，指向某个block
 }
 
 func (ibck *inmemoryBlockCacheKey) Init(bh *blockHeader) {
@@ -344,7 +344,7 @@ type inmemoryBlockCacheEntry struct {
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
 	lastAccessTime uint64
 
-	ib *inmemoryBlock
+	ib *inmemoryBlock  //已经加载到内存中的block
 }
 
 func newInmemoryBlockCache() *inmemoryBlockCache {

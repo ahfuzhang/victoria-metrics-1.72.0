@@ -54,7 +54,7 @@ func (r *ReaderAt) MustReadAt(p []byte, off int64) {
 		src := r.mmapData[off:]
 		// The copy() below may result in thread block as described at https://valyala.medium.com/mmap-in-go-considered-harmful-d92a25cb161d .
 		// But production workload proved this is OK in most cases, so use it without fear :)
-		copy(p, src)
+		copy(p, src)  //todo: 这里可以不必拷贝
 	}
 	readCalls.Inc()
 	readBytes.Add(len(p))
