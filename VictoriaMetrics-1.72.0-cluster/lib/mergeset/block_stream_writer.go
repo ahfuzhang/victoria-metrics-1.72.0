@@ -10,7 +10,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fs"
 )
 
-type blockStreamWriter struct {  // 用于把 inmemoryPart 写入 part 文件夹下的四个数据文件
+type blockStreamWriter struct {  //相当于是 filePart 的写对象
 	compressLevel int
 	path          string
 

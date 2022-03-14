@@ -822,7 +822,7 @@ func (pt *partition) mergePartsOptimal(pws []*partWrapper, stopCh <-chan struct{
 }
 
 // ForceMergeAllParts runs merge for all the parts in pt - small and big.
-func (pt *partition) ForceMergeAllParts() error {
+func (pt *partition) ForceMergeAllParts() error {  //一小时执行一次
 	var pws []*partWrapper
 	pt.partsLock.Lock()
 	if !hasActiveMerges(pt.smallParts) && !hasActiveMerges(pt.bigParts) {
@@ -1346,7 +1346,7 @@ func (pt *partition) stalePartsRemover() {
 	}
 }
 
-func (pt *partition) removeStaleParts() {
+func (pt *partition) removeStaleParts() {  //7分钟执行一次
 	m := make(map[*partWrapper]bool)
 	startTime := time.Now()
 	retentionDeadline := timestampFromTime(startTime) - pt.retentionMsecs

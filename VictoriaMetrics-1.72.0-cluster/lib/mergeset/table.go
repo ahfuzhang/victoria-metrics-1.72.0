@@ -70,7 +70,7 @@ func maxItemsPerCachedPart() uint64 {  //根据剩余内存计算每个part的�
 	// so the maxItems is calculated using the below code:
 	maxItems := uint64(mem) / (4 * defaultPartsToMerge)
 	if maxItems < 1e6 {
-		maxItems = 1e6
+		maxItems = 1e6  //最少100万条
 	}
 	return maxItems
 }
@@ -98,8 +98,8 @@ type Table struct {
 	flushCallbackWorkerWG sync.WaitGroup
 	needFlushCallbackCall uint32
 
-	prepareBlock PrepareBlockCallback  // 调用层传入的回调函数
-
+	prepareBlock PrepareBlockCallback  // 调用层传入的回调函数，merge的时候会调用
+      // 函数名  mergeTagToMetricIDsRows
 	partsLock sync.Mutex  //专门针对parts数组的锁
 	parts     []*partWrapper  // table对象所属的所有 part 的数组。使用引用计数
 
@@ -518,7 +518,7 @@ func (tb *Table) rawItemsFlusher() {
 
 const convertToV1280FileName = "converted-to-v1.28.0"
 
-func (tb *Table) convertToV1280() {
+func (tb *Table) convertToV1280() {  //如果存在旧版本的数据文件，进行转换
 	// Convert tag->metricID rows into tag->metricIDs rows when upgrading to v1.28.0+.
 	flagFilePath := tb.path + "/" + convertToV1280FileName
 	if fs.IsPathExist(flagFilePath) {
@@ -609,7 +609,7 @@ func (tb *Table) flushRawItems(isFinal bool) {
 	tb.rawItems.flush(tb, isFinal)
 }
 
-func (riss *rawItemsShards) flush(tb *Table, isFinal bool) {
+func (riss *rawItemsShards) flush(tb *Table, isFinal bool) {  //mem table转换为inmemoryPart
 	tb.rawItemsPendingFlushesWG.Add(1)
 	defer tb.rawItemsPendingFlushesWG.Done()
 
@@ -791,7 +791,7 @@ func (tb *Table) startPartMergers() {
 	}
 }
 
-func (tb *Table) mergeExistingParts(isFinal bool) error {
+func (tb *Table) mergeExistingParts(isFinal bool) error {  //协程中，最慢1秒调用一次
 	n := fs.MustGetFreeSpace(tb.path)
 	// Divide free space by the max number of concurrent merges.
 	maxOutBytes := n / uint64(mergeWorkersCount)
@@ -811,7 +811,7 @@ const (
 	maxMergeSleepTime = time.Second
 )
 
-func (tb *Table) partMerger() error {
+func (tb *Table) partMerger() error {  //用于merge的协程，与CPU核数一样多
 	sleepTime := minMergeSleepTime
 	var lastMergeTime uint64
 	isFinal := false
@@ -841,7 +841,7 @@ func (tb *Table) partMerger() error {
 		}
 
 		// Nothing to merge. Sleep for a while and try again.
-		sleepTime *= 2
+		sleepTime *= 2  //睡眠时间以2的指数级递增
 		if sleepTime > maxMergeSleepTime {
 			sleepTime = maxMergeSleepTime
 		}
@@ -917,7 +917,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	if outItemsCount < maxItemsPerCachedPart() {
 		// Cache small (i.e. recent) output parts in OS file cache,
 		// since there is high chance they will be read soon.
-		nocache = false
+		nocache = false  //小于100万条的时候，用上cache
 	}
 
 	// Prepare blockStreamWriter for destination part.
@@ -951,7 +951,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	var bb bytesutil.ByteBuffer
 	for _, pw := range pws {
 		if pw.mp == nil {
-			fmt.Fprintf(&bb, "%s\n", pw.p.path)
+			fmt.Fprintf(&bb, "%s\n", pw.p.path)  //所有合并前的文件part
 		}
 	}
 	dstPartPath := ph.Path(tb.path, mergeIdx)
@@ -964,7 +964,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	// Run the created transaction.
 	if err := runTransaction(&tb.snapshotLock, tb.path, txnPath); err != nil {
 		return fmt.Errorf("cannot execute transaction %q: %w", txnPath, err)
-	}
+	}  //删除合并前的part的文件和目录。已经打开的文件没事
 
 	// Open the merged part.
 	newP, err := openFilePart(dstPartPath)  //打开合并后的文件
@@ -1005,7 +1005,7 @@ func (tb *Table) mergeParts(pws []*partWrapper, stopCh <-chan struct{}, isOuterP
 	}
 
 	d := time.Since(startTime)
-	if d > 30*time.Second {
+	if d > 30*time.Second {  //todo: 合并时间应该加个上报
 		logger.Infof("merged %d items across %d blocks in %.3f seconds at %d items/sec to %q; sizeBytes: %d",
 			outItemsCount, outBlocksCount, d.Seconds(), int(float64(outItemsCount)/d.Seconds()), dstPartPath, newPSize)
 	}

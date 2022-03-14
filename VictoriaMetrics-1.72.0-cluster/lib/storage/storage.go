@@ -86,24 +86,24 @@ type Storage struct {
 	dateMetricIDCache *dateMetricIDCache  // 记录 date+metricID 这个类型数据的缓存
 
 	// Fast cache for MetricID values occurred during the current hour.
-	currHourMetricIDs atomic.Value
+	currHourMetricIDs atomic.Value  //hourMetricIDs对象，当前这一个小时产生的metricid，uint64set结构
 
 	// Fast cache for MetricID values occurred during the previous hour.
-	prevHourMetricIDs atomic.Value
+	prevHourMetricIDs atomic.Value  //hourMetricIDs对象，前一个小时产生的metricid，uint64set结构
 
 	// Fast cache for pre-populating per-day inverted index for the next day.
 	// This is needed in order to remove CPU usage spikes at 00:00 UTC
 	// due to creation of per-day inverted index for active time series.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/430 for details.
-	nextDayMetricIDs atomic.Value
+	nextDayMetricIDs atomic.Value  //uint64set结构，记录当天产生的新metricid
 
 	// Pending MetricID values to be added to currHourMetricIDs.
-	pendingHourEntriesLock sync.Mutex
+	pendingHourEntriesLock sync.Mutex  //操作下面的数组的时候，用这个锁
 	pendingHourEntries     []pendingHourMetricIDEntry  // 存储每小时的新的 time series
-
+		//  pendingHourEntries 中的数据，每10秒会被搬走。存储了最新的新metricid
 	// Pending MetricIDs to be added to nextDayMetricIDs.
 	pendingNextDayMetricIDsLock sync.Mutex
-	pendingNextDayMetricIDs     *uint64set.Set
+	pendingNextDayMetricIDs     *uint64set.Set  //把新的metricid写入到这里，记录每天产生的新metricID
 
 	// prefetchedMetricIDs contains metricIDs for pre-fetched metricNames in the prefetchMetricNames function.
 	prefetchedMetricIDs atomic.Value
@@ -140,7 +140,7 @@ type Storage struct {
 	isReadOnly uint32
 }
 
-type pendingHourMetricIDEntry struct {
+type pendingHourMetricIDEntry struct {  // 记录新增的metricid
 	AccountID uint32
 	ProjectID uint32
 	MetricID  uint64
@@ -228,7 +228,7 @@ func OpenStorage(path string, retentionMsecs int64, maxHourlySeries, maxDailySer
 
 	date := fasttime.UnixDate()
 	nextDayMetricIDs := s.mustLoadNextDayMetricIDs(date)
-	s.nextDayMetricIDs.Store(nextDayMetricIDs)
+	s.nextDayMetricIDs.Store(nextDayMetricIDs)  //按天的索引
 	s.pendingNextDayMetricIDs = &uint64set.Set{}
 
 	s.prefetchedMetricIDs.Store(&uint64set.Set{})
@@ -690,7 +690,7 @@ func (s *Storage) currHourMetricIDsUpdater() {
 
 var nextDayMetricIDsUpdateInterval = time.Second * 11
 
-func (s *Storage) nextDayMetricIDsUpdater() {
+func (s *Storage) nextDayMetricIDsUpdater() {  //每11秒执行一次
 	ticker := time.NewTicker(nextDayMetricIDsUpdateInterval)
 	defer ticker.Stop()
 	for {
@@ -789,7 +789,7 @@ func (s *Storage) MustClose() {
 }
 
 func (s *Storage) mustLoadNextDayMetricIDs(date uint64) *byDateMetricIDEntry {
-	e := &byDateMetricIDEntry{
+	e := &byDateMetricIDEntry{  //加载按天的cache
 		date: date,
 	}
 	name := "next_day_metric_ids"
@@ -833,7 +833,7 @@ func (s *Storage) mustLoadNextDayMetricIDs(date uint64) *byDateMetricIDEntry {
 	return e
 }
 
-func (s *Storage) mustLoadHourMetricIDs(hour uint64, name string) *hourMetricIDs {
+func (s *Storage) mustLoadHourMetricIDs(hour uint64, name string) *hourMetricIDs {  //加载cache currHourMetricIDs
 	hm := &hourMetricIDs{
 		hour: hour,
 	}
@@ -2055,11 +2055,11 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 		prevDate     uint64
 		prevMetricID uint64
 	)
-	hm := s.currHourMetricIDs.Load().(*hourMetricIDs)
-	hmPrev := s.prevHourMetricIDs.Load().(*hourMetricIDs)
-	hmPrevDate := hmPrev.hour / 24
-	nextDayMetricIDs := &s.nextDayMetricIDs.Load().(*byDateMetricIDEntry).v
-	todayShare16bit := uint64((float64(fasttime.UnixTimestamp()%(3600*24)) / (3600 * 24)) * (1 << 16))
+	hm := s.currHourMetricIDs.Load().(*hourMetricIDs)  //当前小时的cache
+	hmPrev := s.prevHourMetricIDs.Load().(*hourMetricIDs)  //前一小时的cache
+	hmPrevDate := hmPrev.hour / 24  // 1970年开始的天数
+	nextDayMetricIDs := &s.nextDayMetricIDs.Load().(*byDateMetricIDEntry).v  //日期缓存
+	todayShare16bit := uint64((float64(fasttime.UnixTimestamp()%(3600*24)) / (3600 * 24)) * (1 << 16))  //当天从0点开始的秒数...  //todo: 感觉是bug...果然是bug
 	type pendingDateMetricID struct {
 		date      uint64
 		metricID  uint64
@@ -2067,26 +2067,26 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 		projectID uint32
 		mr        *MetricRow
 	}
-	var pendingDateMetricIDs []pendingDateMetricID
-	var pendingNextDayMetricIDs []uint64
-	var pendingHourEntries []pendingHourMetricIDEntry
-	for i := range rows {
+	var pendingDateMetricIDs []pendingDateMetricID  //应该要加到日期索引中的数据
+	var pendingNextDayMetricIDs []uint64  // 应该要加到日期索引中的metricID
+	var pendingHourEntries []pendingHourMetricIDEntry  //应该要加到小时索引中的数据
+	for i := range rows {  //遍历每行
 		r := &rows[i]
 		if r.Timestamp != prevTimestamp {
-			date = uint64(r.Timestamp) / msecPerDay
-			hour = uint64(r.Timestamp) / msecPerHour
-			prevTimestamp = r.Timestamp
+			date = uint64(r.Timestamp) / msecPerDay  //上一条数据的日期值
+			hour = uint64(r.Timestamp) / msecPerHour  //上一条数据的小时值
+			prevTimestamp = r.Timestamp  // 上一条数据的时间戳
 		}
 		metricID := r.TSID.MetricID
 		if metricID == prevMetricID && date == prevDate {
 			// Fast path for bulk import of multiple rows with the same (date, metricID) pairs.
-			continue
+			continue  // prevMetricID相等，说明这条索引已经处理过了
 		}
 		prevDate = date
 		prevMetricID = metricID
-		if hour == hm.hour {
+		if hour == hm.hour {  //所要插入数据的时间戳，是否属于当前小时
 			// The r belongs to the current hour. Check for the current hour cache.
-			if hm.m.Has(metricID) {
+			if hm.m.Has(metricID) {  //当前小时如果有metricID
 				// Fast path: the metricID is in the current hour cache.
 				// This means the metricID has been already added to per-day inverted index.
 
@@ -2106,21 +2106,21 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 					pendingNextDayMetricIDs = append(pendingNextDayMetricIDs, metricID)
 				}
 				continue
-			}
+			}  //下面是：当前小时cache没有metricID
 			e := pendingHourMetricIDEntry{
 				AccountID: r.TSID.AccountID,
 				ProjectID: r.TSID.ProjectID,
 				MetricID:  metricID,
 			}
 			pendingHourEntries = append(pendingHourEntries, e)
-			if date == hmPrevDate && hmPrev.m.Has(metricID) {
+			if date == hmPrevDate && hmPrev.m.Has(metricID) {  //前一个小时的cache中已经有meticID了
 				// The metricID is already registered for the current day on the previous hour.
 				continue
 			}
 		}
 
 		// Slower path: check global cache for (date, metricID) entry.
-		if s.dateMetricIDCache.Has(date, metricID) {
+		if s.dateMetricIDCache.Has(date, metricID) {  //检查 date + metricID的索引是否存在
 			continue
 		}
 		// Slow path: store the (date, metricID) entry in the indexDB.
@@ -2138,7 +2138,7 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 		s.pendingNextDayMetricIDsLock.Unlock()
 	}
 	if len(pendingHourEntries) > 0 {
-		s.pendingHourEntriesLock.Lock()
+		s.pendingHourEntriesLock.Lock()  //新的metric，加到storage的这个数组里面去
 		s.pendingHourEntries = append(s.pendingHourEntries, pendingHourEntries...)
 		s.pendingHourEntriesLock.Unlock()
 	}
@@ -2148,7 +2148,7 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 	}
 
 	// Slow path - add new (date, metricID) entries to indexDB.
-
+		//todo: 写成一个函数更清晰啊
 	atomic.AddUint64(&s.slowPerDayIndexInserts, uint64(len(pendingDateMetricIDs)))
 	// Sort pendingDateMetricIDs by (accountID, projectID, date, metricID) in order to speed up `is` search in the loop below.
 	sort.Slice(pendingDateMetricIDs, func(i, j int) bool {
@@ -2163,7 +2163,7 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 		if a.date != b.date {
 			return a.date < b.date
 		}
-		return a.metricID < b.metricID
+		return a.metricID < b.metricID  //新的 metricID排序
 	})
 	idb := s.idb()
 	is := idb.getIndexSearch(0, 0, noDeadline)
@@ -2216,18 +2216,18 @@ func (s *Storage) updatePerDateData(rows []rawRow, mrs []*MetricRow) error {
 // dateMetricIDCache is fast cache for holding (date, metricID) entries.
 //
 // It should be faster than map[date]*uint64set.Set on multicore systems.
-type dateMetricIDCache struct {
+type dateMetricIDCache struct {  //date + metricID 为key的索引，用于检查某天是否存在某个metricid
 	// 64-bit counters must be at the top of the structure to be properly aligned on 32-bit arches.
 	syncsCount  uint64
 	resetsCount uint64
 
 	// Contains immutable map
-	byDate atomic.Value
+	byDate atomic.Value  // byDateMetricIDMap 类型
 
 	// Contains mutable map protected by mu
-	byDateMutable    *byDateMetricIDMap
-	nextSyncDeadline uint64
-	mu               sync.Mutex
+	byDateMutable    *byDateMetricIDMap  // 对 map[uint64]*byDateMetricIDEntry 的封装
+	nextSyncDeadline uint64  //可变对象缓存10秒，超过10秒就把数据同步到不可变对象
+	mu               sync.Mutex  //对可变对象加锁
 }
 
 func newDateMetricIDCache() *dateMetricIDCache {
@@ -2242,7 +2242,7 @@ func (dmc *dateMetricIDCache) Reset() {
 	dmc.mu.Unlock()
 }
 
-func (dmc *dateMetricIDCache) resetLocked() {
+func (dmc *dateMetricIDCache) resetLocked() {  //超过 1/256 的总内存，全部清空
 	// Do not reset syncsCount and resetsCount
 	dmc.byDate.Store(newByDateMetricIDMap())
 	dmc.byDateMutable = newByDateMetricIDMap()
@@ -2269,17 +2269,17 @@ func (dmc *dateMetricIDCache) SizeBytes() uint64 {
 	return n
 }
 
-func (dmc *dateMetricIDCache) Has(date, metricID uint64) bool {
+func (dmc *dateMetricIDCache) Has(date, metricID uint64) bool {  //检查某个日期，某个metricID是否存在
 	byDate := dmc.byDate.Load().(*byDateMetricIDMap)
 	v := byDate.get(date)
-	if v.Has(metricID) {
+	if v.Has(metricID) {  //先在不可变对象里面搜索
 		// Fast path.
 		// The majority of calls must go here.
 		return true
 	}
 
 	// Slow path. Check mutable map.
-	dmc.mu.Lock()
+	dmc.mu.Lock()  //访问可变对象要加锁
 	v = dmc.byDateMutable.get(date)
 	ok := v.Has(metricID)
 	dmc.syncLockedIfNeeded()
@@ -2288,12 +2288,12 @@ func (dmc *dateMetricIDCache) Has(date, metricID uint64) bool {
 	return ok
 }
 
-type dateMetricID struct {
+type dateMetricID struct {  //存储在cache中的格式, cache为dateMetricIDCache
 	date     uint64
 	metricID uint64
 }
 
-func (dmc *dateMetricIDCache) Store(dmids []dateMetricID) {
+func (dmc *dateMetricIDCache) Store(dmids []dateMetricID) {  //写入新的metric索引
 	var prevDate uint64
 	metricIDs := make([]uint64, 0, len(dmids))
 	dmc.mu.Lock()
@@ -2325,20 +2325,20 @@ func (dmc *dateMetricIDCache) Set(date, metricID uint64) {
 
 func (dmc *dateMetricIDCache) syncLockedIfNeeded() {
 	currentTime := fasttime.UnixTimestamp()
-	if currentTime >= dmc.nextSyncDeadline {
+	if currentTime >= dmc.nextSyncDeadline {  //数据缓存10秒
 		dmc.nextSyncDeadline = currentTime + 10
 		dmc.syncLocked()
 	}
 }
 
-func (dmc *dateMetricIDCache) syncLocked() {
-	if len(dmc.byDateMutable.m) == 0 {
+func (dmc *dateMetricIDCache) syncLocked() {  //把mutable中的数据转移到immutable中去
+	if len(dmc.byDateMutable.m) == 0 {        // 上层已经加锁
 		// Nothing to sync.
 		return
 	}
 	byDate := dmc.byDate.Load().(*byDateMetricIDMap)
 	byDateMutable := dmc.byDateMutable
-	for date, e := range byDateMutable.m {
+	for date, e := range byDateMutable.m {  //处理有相同日期的情况
 		v := byDate.get(date)
 		if v == nil {
 			continue
@@ -2350,26 +2350,26 @@ func (dmc *dateMetricIDCache) syncLocked() {
 			v:    *v,
 		}
 	}
-	for date, e := range byDate.m {
+	for date, e := range byDate.m {  //处理日期只在 mutable 中的情况
 		v := byDateMutable.get(date)
 		if v != nil {
 			continue
 		}
-		byDateMutable.m[date] = e
+		byDateMutable.m[date] = e  //把不可变的数据搬迁到可变。这样难道不是工作量更大吗？
 	}
-	dmc.byDate.Store(dmc.byDateMutable)
+	dmc.byDate.Store(dmc.byDateMutable)  //把当前的mutable当成新的 immutable, 为啥这么写？
 	dmc.byDateMutable = newByDateMetricIDMap()
 
 	atomic.AddUint64(&dmc.syncsCount, 1)
 
-	if dmc.SizeBytes() > uint64(memory.Allowed())/256 {
+	if dmc.SizeBytes() > uint64(memory.Allowed())/256 {  //配置128GB内存的情况下，这里是512MB
 		dmc.resetLocked()
 	}
 }
 
 type byDateMetricIDMap struct {
-	hotEntry atomic.Value
-	m        map[uint64]*byDateMetricIDEntry
+	hotEntry atomic.Value  // byDateMetricIDEntry 类型，当前日期的条目放在这里，便于加快查询速度
+	m        map[uint64]*byDateMetricIDEntry  // key 为 日期
 }
 
 func newByDateMetricIDMap() *byDateMetricIDMap {
@@ -2380,9 +2380,9 @@ func newByDateMetricIDMap() *byDateMetricIDMap {
 	return dmm
 }
 
-func (dmm *byDateMetricIDMap) get(date uint64) *uint64set.Set {
+func (dmm *byDateMetricIDMap) get(date uint64) *uint64set.Set {  //按照日期查询
 	hotEntry := dmm.hotEntry.Load().(*byDateMetricIDEntry)
-	if hotEntry.date == date {
+	if hotEntry.date == date {  //缓存最近查询的结果
 		// Fast path
 		return &hotEntry.v
 	}
@@ -2407,16 +2407,16 @@ func (dmm *byDateMetricIDMap) getOrCreate(date uint64) *uint64set.Set {
 	return &e.v
 }
 
-type byDateMetricIDEntry struct {
-	date uint64
-	v    uint64set.Set
+type byDateMetricIDEntry struct {  //代表某一天存在的metricID的集合
+	date uint64  // 1970 开始的天数，初始化的时候是当天的日期
+	v    uint64set.Set  // key 为 metricid
 }
 
-func (s *Storage) updateNextDayMetricIDs() {
+func (s *Storage) updateNextDayMetricIDs() {  //每11秒执行一次
 	date := fasttime.UnixDate()
 	e := s.nextDayMetricIDs.Load().(*byDateMetricIDEntry)
 	s.pendingNextDayMetricIDsLock.Lock()
-	pendingMetricIDs := s.pendingNextDayMetricIDs
+	pendingMetricIDs := s.pendingNextDayMetricIDs  //每天新产生的metricID
 	s.pendingNextDayMetricIDs = &uint64set.Set{}
 	s.pendingNextDayMetricIDsLock.Unlock()
 	if pendingMetricIDs.Len() == 0 && e.date == date {
@@ -2490,9 +2490,9 @@ func (s *Storage) updateCurrHourMetricIDs() {  // 每10秒执行一次
 }
 
 type hourMetricIDs struct {
-	m        *uint64set.Set
+	m        *uint64set.Set  // roaringBitmap， 以 metricID 为key
 	byTenant map[accountProjectKey]*uint64set.Set
-	hour     uint64
+	hour     uint64  // UnixTimestamp() / 3600, 1970年开始的小时数
 	isFull   bool
 }
 

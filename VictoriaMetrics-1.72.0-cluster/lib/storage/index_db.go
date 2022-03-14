@@ -41,7 +41,7 @@ const (  //非常重要。以下应该是索引的类型。整个mergeset中存�
 	nsPrefixMetricIDToMetricName = 3  // func (db *indexDB) createIndexes 中使用了此类型
 
 	// Prefix for deleted MetricID entries.
-	nsPrefixDeletedMetricID = 4
+	nsPrefixDeletedMetricID = 4  // func deleteMetricIDs中使用了此类型
 
 	// Prefix for Date->MetricID entries.
 	nsPrefixDateToMetricID = 5  // func (is *indexSearch) storeDateMetricID 中使用了此类型
@@ -351,12 +351,12 @@ func (db *indexDB) putMetricNameToCache(metricID uint64, metricName []byte) {
 func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versioned bool) []byte {  //把当次的搜索表达式序列化到一个buffer中
 	prefix := ^uint64(0)
 	if versioned {
-		prefix = atomic.LoadUint64(&tagFiltersKeyGen)
+		prefix = atomic.LoadUint64(&tagFiltersKeyGen)  // tagFiltersKeyGen每10秒加1
 	}
 	// Round start and end times to per-day granularity according to per-day inverted index.
 	startDate := uint64(tr.MinTimestamp) / msecPerDay
 	endDate := uint64(tr.MaxTimestamp) / msecPerDay
-	dst = encoding.MarshalUint64(dst, prefix)
+	dst = encoding.MarshalUint64(dst, prefix)  //versioned为true的时候，这里的prefix每10秒变化一次
 	dst = encoding.MarshalUint64(dst, startDate)
 	dst = encoding.MarshalUint64(dst, endDate)
 	if len(tfss) == 0 {
@@ -373,13 +373,13 @@ func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versione
 	return dst
 }
 
-func invalidateTagFiltersCache() {
+func invalidateTagFiltersCache() {  //table上的回调函数，10秒执行一次
 	// This function must be fast, since it is called each
 	// time new timeseries is added.
 	atomic.AddUint64(&tagFiltersKeyGen, 1)
 }
 
-var tagFiltersKeyGen uint64
+var tagFiltersKeyGen uint64  //记录cache是第几代？
 
 func marshalTSIDs(dst []byte, tsids []TSID) []byte {
 	dst = encoding.MarshalUint64(dst, uint64(len(tsids)))
@@ -1664,7 +1664,7 @@ func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int,
 	tfKeyBuf := tagFiltersKeyBufPool.Get()
 	defer tagFiltersKeyBufPool.Put(tfKeyBuf)
 
-	tfKeyBuf.B = marshalTagFiltersKey(tfKeyBuf.B[:0], tfss, tr, true)  // 把搜索标签序列化
+	tfKeyBuf.B = marshalTagFiltersKey(tfKeyBuf.B[:0], tfss, tr, true)  // 把搜索标签序列化, versioned为true，则序列化数据的prefix，每10秒都会不同
 	tsids, ok := db.getFromTagFiltersCache(tfKeyBuf.B)  // 在缓存中搜索
 	if ok {
 		// Fast path - tsids found in the cache.
@@ -3047,7 +3047,7 @@ func (mp *tagToMetricIDsRowParser) IsDeletedTag(dmis *uint64set.Set) bool {
 	}
 	return true
 }
-
+  // merge的时候会回调这个函数
 func mergeTagToMetricIDsRows(data []byte, items []mergeset.Item) ([]byte, []mergeset.Item) {
 	data, items = mergeTagToMetricIDsRowsInternal(data, items, nsPrefixTagToMetricIDs)
 	data, items = mergeTagToMetricIDsRowsInternal(data, items, nsPrefixDateTagToMetricIDs)

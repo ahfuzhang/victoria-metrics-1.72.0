@@ -212,11 +212,11 @@ func (bsr *blockStreamReader) Next() bool {  // 把压缩的数据还原到内�
 	bsr.bhIdx++  // blockHeader的游标前移
 
 	bsr.sb.itemsData = bytesutil.Resize(bsr.sb.itemsData, int(bsr.bh.itemsBlockSize))  // todo: 当从 inmemoryBlock合并的时候，这里很浪费
-	if err := fs.ReadFullData(bsr.itemsReader, bsr.sb.itemsData); err != nil {
+	if err := fs.ReadFullData(bsr.itemsReader, bsr.sb.itemsData); err != nil {  //看起来是读出一个block
 		bsr.err = fmt.Errorf("cannot read compressed items block with size %d: %w", bsr.bh.itemsBlockSize, err)
 		return false
 	}
-
+    //读出一个block的长度
 	bsr.sb.lensData = bytesutil.Resize(bsr.sb.lensData, int(bsr.bh.lensBlockSize))
 	if err := fs.ReadFullData(bsr.lensReader, bsr.sb.lensData); err != nil {
 		bsr.err = fmt.Errorf("cannot read compressed lens block with size %d: %w", bsr.bh.lensBlockSize, err)

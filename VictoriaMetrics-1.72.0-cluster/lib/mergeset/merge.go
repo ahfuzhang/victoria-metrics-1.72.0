@@ -99,7 +99,7 @@ func (bsm *blockStreamMerger) Init(bsrs []*blockStreamReader, prepareBlock Prepa
 }
 
 var errForciblyStopped = fmt.Errorf("forcibly stopped")
-
+  //两两归并排序的过程
 func (bsm *blockStreamMerger) Merge(bsw *blockStreamWriter, ph *partHeader, stopCh <-chan struct{}, itemsMerged *uint64) error {  // 合并15个 inmemoryPart  //两两合并。每合并满64KB，就写入 mpDst 的 ByteBuffer 中
 again:  // todo: 丑陋的代码
 	if len(bsm.bsrHeap) == 0 {
@@ -114,13 +114,13 @@ again:  // todo: 丑陋的代码
 	default:
 	}
 
-	bsr := heap.Pop(&bsm.bsrHeap).(*blockStreamReader)  // 从堆中弹出一个元素
+	bsr := heap.Pop(&bsm.bsrHeap).(*blockStreamReader)  // 从堆中弹出一个元素，其实就是最小的元素
 
 	var nextItem []byte
 	hasNextItem := false
 	if len(bsm.bsrHeap) > 0 {
 		nextItem = bsm.bsrHeap[0].bh.firstItem  //下一个block中的数据
-		hasNextItem = true
+		hasNextItem = true  //将游标指向下一个元素
 	}
 	items := bsr.Block.items  // inmemoryBlock 中的数据
 	data := bsr.Block.data
