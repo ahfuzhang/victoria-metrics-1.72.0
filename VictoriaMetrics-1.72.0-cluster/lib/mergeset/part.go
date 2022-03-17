@@ -30,16 +30,16 @@ var (
 	maxCachedIndexBlocksPerPartOnce sync.Once
 )
 
-func getMaxCachedInmemoryBlocksPerPart() int {
+func getMaxCachedInmemoryBlocksPerPart() int {  //每个part允许cache的总量
 	maxCachedInmemoryBlocksPerPartOnce.Do(func() {
-		n := memory.Allowed() / 1024 / 1024 / 4
+		n := memory.Allowed() / 1024 / 1024 / 4  //128GB内存，等于32768
 		if n == 0 {
 			n = 10
 		}
 		maxCachedInmemoryBlocksPerPart = n
 	})
 	return maxCachedInmemoryBlocksPerPart
-}
+}  // 32768块 * 64KB = 2gb, 每个part最多允许2GB缓存
 
 var (
 	maxCachedInmemoryBlocksPerPart     int
@@ -146,7 +146,7 @@ func (idxb *indexBlock) SizeBytes() int {
 	return n
 }
 
-type indexBlockCache struct {  //这个cache不是 fastcache，看来还要仔细的看看实现原理
+type indexBlockCache struct {  //cache的容量没有限制，整个part的index.bin可能都会被装载
 	// Atomically updated counters must go first in the struct, so they are properly
 	// aligned to 8 bytes on 32-bit architectures.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
@@ -320,7 +320,7 @@ type inmemoryBlockCache struct {  // key为偏移量， value为 inmemoryBlock�
 	requests uint64
 	misses   uint64
 
-	m  map[inmemoryBlockCacheKey]*inmemoryBlockCacheEntry
+	m  map[inmemoryBlockCacheKey]*inmemoryBlockCacheEntry  //128GB内存下，最多允许32768个KEY
 	mu sync.RWMutex
 
 	perKeyMisses     map[inmemoryBlockCacheKey]int

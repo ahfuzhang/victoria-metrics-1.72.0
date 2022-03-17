@@ -44,10 +44,10 @@ const (  //非常重要。以下应该是索引的类型。整个mergeset中存�
 	nsPrefixDeletedMetricID = 4  // func deleteMetricIDs中使用了此类型
 
 	// Prefix for Date->MetricID entries.
-	nsPrefixDateToMetricID = 5  // func (is *indexSearch) storeDateMetricID 中使用了此类型
+	nsPrefixDateToMetricID = 5  // 插入数据部分后，再创建此索引
 
 	// Prefix for (Date,Tag)->MetricID entries.
-	nsPrefixDateTagToMetricIDs = 6  // func (is *indexSearch) storeDateMetricID 中使用了此类型
+	nsPrefixDateTagToMetricIDs = 6  //  插入数据部分后，再创建此索引
 )
 
 // indexDB represents an index db.
@@ -296,7 +296,7 @@ func (db *indexDB) getFromTagFiltersCache(key []byte) ([]TSID, bool) {  // 根�
 
 var tagBufPool bytesutil.ByteBufferPool
 
-func (db *indexDB) putToTagFiltersCache(tsids []TSID, key []byte) {
+func (db *indexDB) putToTagFiltersCache(tsids []TSID, key []byte) {  //写入表达式cache
 	buf := tagBufPool.Get()
 	buf.B = marshalTSIDs(buf.B[:0], tsids)
 	compressedBuf := tagBufPool.Get()
@@ -351,7 +351,7 @@ func (db *indexDB) putMetricNameToCache(metricID uint64, metricName []byte) {
 func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versioned bool) []byte {  //把当次的搜索表达式序列化到一个buffer中
 	prefix := ^uint64(0)
 	if versioned {
-		prefix = atomic.LoadUint64(&tagFiltersKeyGen)  // tagFiltersKeyGen每10秒加1
+		prefix = atomic.LoadUint64(&tagFiltersKeyGen)  // tagFiltersKeyGen每10秒加1，通过这个来使cache过期
 	}
 	// Round start and end times to per-day granularity according to per-day inverted index.
 	startDate := uint64(tr.MinTimestamp) / msecPerDay
@@ -373,13 +373,13 @@ func marshalTagFiltersKey(dst []byte, tfss []*TagFilters, tr TimeRange, versione
 	return dst
 }
 
-func invalidateTagFiltersCache() {  //table上的回调函数，10秒执行一次
+func invalidateTagFiltersCache() {  //table上的回调函数，10秒执行一次。这个用来使表达式cache过期
 	// This function must be fast, since it is called each
 	// time new timeseries is added.
 	atomic.AddUint64(&tagFiltersKeyGen, 1)
 }
 
-var tagFiltersKeyGen uint64  //记录cache是第几代？
+var tagFiltersKeyGen uint64  //记录cache是第几代
 
 func marshalTSIDs(dst []byte, tsids []TSID) []byte {
 	dst = encoding.MarshalUint64(dst, uint64(len(tsids)))
@@ -444,7 +444,7 @@ type indexSearch struct {
 	projectID uint32
 
 	// deadline in unix timestamp seconds for the given search.
-	deadline uint64
+	deadline uint64  //超时时间
 
 	// tsidByNameMisses and tsidByNameSkips is used for a performance
 	// hack in GetOrCreateTSIDByName. See the comment there.
@@ -798,7 +798,7 @@ func (is *indexSearch) searchTagKeys(tks map[string]struct{}, maxTagKeys int) er
 	loopsPaceLimiter := 0
 	kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixTagToMetricIDs)
 	prefix := kb.B
-	ts.Seek(prefix)
+	ts.Seek(prefix)  //相当于是找到所有这个类型的块，然后在后续的遍历中去匹配
 	for len(tks) < maxTagKeys && ts.NextItem() {
 		if loopsPaceLimiter&paceLimiterFastIterationsMask == 0 {
 			if err := checkSearchDeadlineAndPace(is.deadline); err != nil {
@@ -830,7 +830,7 @@ func (is *indexSearch) searchTagKeys(tks map[string]struct{}, maxTagKeys int) er
 		kb.B = is.marshalCommonPrefix(kb.B[:0], nsPrefixTagToMetricIDs)
 		kb.B = marshalTagValue(kb.B, key)
 		kb.B[len(kb.B)-1]++
-		ts.Seek(kb.B)
+		ts.Seek(kb.B)  // 丑陋的代码，为什么这个地方又搞个seek ???
 	}
 	if err := ts.Error(); err != nil {
 		return fmt.Errorf("error during search for prefix %q: %w", prefix, err)
@@ -1669,7 +1669,7 @@ func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int,
 	if ok {
 		// Fast path - tsids found in the cache.
 		return tsids, nil  // 找到了就直接返回
-	}
+	}  // ??? 缓存如何解决新的TSID的问题?
 
 	// Slow path - search for tsids in the db and extDB.
 	accountID := tfss[0].accountID
@@ -1682,12 +1682,12 @@ func (db *indexDB) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics int,
 	}
 
 	var extTSIDs []TSID
-	if db.doExtDB(func(extDB *indexDB) {
+	if db.doExtDB(func(extDB *indexDB) {  //在前一个31天的indexDB中查询
 		tfKeyExtBuf := tagFiltersKeyBufPool.Get()
 		defer tagFiltersKeyBufPool.Put(tfKeyExtBuf)
 
 		// Data in extDB cannot be changed, so use unversioned keys for tag cache.
-		tfKeyExtBuf.B = marshalTagFiltersKey(tfKeyExtBuf.B[:0], tfss, tr, false)
+		tfKeyExtBuf.B = marshalTagFiltersKey(tfKeyExtBuf.B[:0], tfss, tr, false)  //过去的分片，是只读的，所以不需要过期
 		tsids, ok := extDB.getFromTagFiltersCache(tfKeyExtBuf.B)
 		if ok {
 			extTSIDs = tsids
@@ -1757,7 +1757,7 @@ func (is *indexSearch) getTSIDByMetricName(dst *TSID, metricName []byte) error {
 	// Nothing found
 	return io.EOF
 }
-
+  //根据metricID搜索metricNAME
 func (is *indexSearch) searchMetricNameWithCache(dst []byte, metricID uint64) ([]byte, error) {
 	metricName := is.db.getMetricNameFromCache(dst, metricID)
 	if len(metricName) > len(dst) {
@@ -1846,7 +1846,7 @@ func (is *indexSearch) searchTSIDs(tfss []*TagFilters, tr TimeRange, maxMetrics 
 		// Fast path - the index doesn't contain data for the given tr.
 		return nil, nil
 	}
-	metricIDs, err := is.searchMetricIDs(tfss, tr, maxMetrics)
+	metricIDs, err := is.searchMetricIDs(tfss, tr, maxMetrics)  //这里执行表达式的查询，非常重要！！！
 	if err != nil {
 		return nil, err
 	}
@@ -1909,7 +1909,7 @@ func (is *indexSearch) getTSIDByMetricID(dst *TSID, metricID uint64) error {
 		}
 		return fmt.Errorf("error when searching TSID by metricID; searchPrefix %q: %w", kb.B, err)
 	}
-	v := ts.Item[len(kb.B):]
+	v := ts.Item[len(kb.B):]   //value存储于索引的后半部分
 	tail, err := dst.Unmarshal(v)
 	if err != nil {
 		return fmt.Errorf("cannot unmarshal TSID=%X: %w", v, err)
@@ -2143,7 +2143,7 @@ func (is *indexSearch) searchMetricIDs(tfss []*TagFilters, tr TimeRange, maxMetr
 
 	return sortedMetricIDs, nil
 }
-
+     //非常重要，根据查询表达式，搜索metricid
 func (is *indexSearch) searchMetricIDsInternal(tfss []*TagFilters, tr TimeRange, maxMetrics int) (*uint64set.Set, error) {
 	metricIDs := &uint64set.Set{}  // 用于保存结果
 	for _, tfs := range tfss {
@@ -2154,7 +2154,7 @@ func (is *indexSearch) searchMetricIDsInternal(tfss []*TagFilters, tr TimeRange,
 				logger.Panicf(`BUG: cannot add {__name__!=""} filter: %s`, err)
 			}
 		}
-		if err := is.updateMetricIDsForTagFilters(metricIDs, tfs, tr, maxMetrics+1); err != nil {
+		if err := is.updateMetricIDsForTagFilters(metricIDs, tfs, tr, maxMetrics+1); err != nil {  //搜索一个具体的表达式
 			return nil, err
 		}
 		if metricIDs.Len() > maxMetrics {
@@ -2425,7 +2425,7 @@ func (is *indexSearch) getMetricIDsForDateAndFilters(date uint64, tfs *TagFilter
 	}
 	tfws := make([]tagFilterWithWeight, len(tfs.tfs))
 	currentTime := fasttime.UnixTimestamp()
-	for i := range tfs.tfs {  //遍历每个过滤项
+	for i := range tfs.tfs {  //遍历每个过滤项 tag=value
 		tf := &tfs.tfs[i]
 		loopsCount, filterLoopsCount, timestamp := is.getLoopsCountAndTimestampForDateFilter(date, tf)
 		if currentTime > timestamp+3600 {

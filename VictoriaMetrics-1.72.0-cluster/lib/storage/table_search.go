@@ -58,7 +58,7 @@ func (ts *tableSearch) reset() {
 // tsids cannot be modified after the Init call, since it is owned by ts.
 //
 // MustClose must be called then the tableSearch is done.
-func (ts *tableSearch) Init(tb *table, tsids []TSID, tr TimeRange) {
+func (ts *tableSearch) Init(tb *table, tsids []TSID, tr TimeRange) {  //搜索到TSID后，搜索数据
 	if ts.needClosing {
 		logger.Panicf("BUG: missing MustClose call before the next call to Init")
 	}
@@ -68,20 +68,20 @@ func (ts *tableSearch) Init(tb *table, tsids []TSID, tr TimeRange) {
 	now := int64(fasttime.UnixTimestamp() * 1000)
 	minTimestamp := now - tb.retentionMsecs
 	if tr.MinTimestamp < minTimestamp {
-		tr.MinTimestamp = minTimestamp
+		tr.MinTimestamp = minTimestamp  //默认情况下，查询时间不能比31天前还要小
 	}
 
 	ts.reset()
 	ts.tb = tb
 	ts.needClosing = true
 
-	if len(tsids) == 0 {
+	if len(tsids) == 0 {  //todo: 这个检查应该前置
 		// Fast path - zero tsids.
 		ts.err = io.EOF
 		return
 	}
 
-	ts.ptws = tb.GetPartitions(ts.ptws[:0])
+	ts.ptws = tb.GetPartitions(ts.ptws[:0])  //复制分区的引用
 
 	// Initialize the ptsPool.
 	if n := len(ts.ptws) - cap(ts.ptsPool); n > 0 {

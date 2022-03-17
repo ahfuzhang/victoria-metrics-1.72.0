@@ -15,7 +15,7 @@ type TableSearch struct {
 	// or FirstItemWithPrefix call.
 	//
 	// Item contents breaks after the next call to NextItem.
-	Item []byte
+	Item []byte  //存储当前按照前缀搜索到的第一个索引
 
 	tb *Table
 
@@ -23,11 +23,11 @@ type TableSearch struct {
 
 	psPool []partSearch  // 可能是每个part, 对应着一个part search对象
 	psHeap partSearchHeap  //猜测是把含有可能的前缀的元素，放到一个堆里面去。 ??? 为什么是堆呢
-
+       // 采用优先队列
 	err error
 
-	nextItemNoop bool
-	needClosing  bool
+	nextItemNoop bool  //默认false，指示后续是否还有数据
+	needClosing  bool  // 必须把part的引用进行归还,  []*partWrapper
 }
 
 func (ts *TableSearch) reset() {  // 初始化对象的相关成员
@@ -68,19 +68,19 @@ func (ts *TableSearch) Init(tb *Table) {  // 初始化 table search对象
 	ts.tb = tb  // table 对象
 	ts.needClosing = true
 
-	ts.pws = ts.tb.getParts(ts.pws[:0])
+	ts.pws = ts.tb.getParts(ts.pws[:0])  //所有的part，复制出来
 
 	// Initialize the psPool.
 	if n := len(ts.pws) - cap(ts.psPool); n > 0 {
 		ts.psPool = append(ts.psPool[:cap(ts.psPool)], make([]partSearch, n)...)
 	}
 	ts.psPool = ts.psPool[:len(ts.pws)]
-	for i, pw := range ts.pws {
+	for i, pw := range ts.pws {  //初始化 partSearch
 		ts.psPool[i].Init(pw.p)  // 从 part 对象拷贝过来
 	}
 }
 
-// Seek seeks for the first item greater or equal to k in the ts.
+// Seek seeks for the first item greater or equal to k in the ts.  //??? 为什么搜索的key没保存下来？
 func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜索。原始格式包含了序列化后的time series数据
 	if err := ts.Error(); err != nil {
 		// Do nothing on unrecoverable error.
@@ -93,14 +93,14 @@ func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜�
 	ts.psHeap = ts.psHeap[:0]  // 数组清空
 	for i := range ts.psPool {  // psPool 是 part search对象的数组. ??? psPool到底是按照什么排序的?
 		ps := &ts.psPool[i]   //psPool的排序是parts的排序
-		ps.Seek(k)  // 在每个part search 中继续搜索
+		ps.Seek(k)  // 在每个part search 中继续搜索。这一步说明，这个时候，part中所有符合条件的数据都被定为到了
 		if !ps.NextItem() {
 			if err := ps.Error(); err != nil {
 				errors = append(errors, err)
 			}
 			continue
 		}
-		ts.psHeap = append(ts.psHeap, ps)  // 看起来是搜索到了，加入数组。可是，同一个key怎么可能搜索到多次呢？
+		ts.psHeap = append(ts.psHeap, ps)  // 搜索到了，加入优先队列
 	}
 	if len(errors) > 0 {
 		// Return only the first error, since it has no sense in returning all errors.
@@ -112,15 +112,15 @@ func (ts *TableSearch) Seek(k []byte) {  // 传入原始的k格式，进行搜�
 		return
 	}
 	heap.Init(&ts.psHeap)   //猜测这里可能只是粗筛，把含有可能的前缀的part都放进去
-	ts.Item = ts.psHeap[0].Item
+	ts.Item = ts.psHeap[0].Item  //找到的第一条数据
 	ts.nextItemNoop = true
 }
 
 // FirstItemWithPrefix seeks for the first item with the given prefix in the ts.
 //
 // It returns io.EOF if such an item doesn't exist.
-func (ts *TableSearch) FirstItemWithPrefix(prefix []byte) error {
-	ts.Seek(prefix)
+func (ts *TableSearch) FirstItemWithPrefix(prefix []byte) error {  //根据前缀来查找KEY
+	ts.Seek(prefix)  //这种操作打开游标
 	if !ts.NextItem() {
 		if err := ts.Error(); err != nil {
 			return err
@@ -130,23 +130,23 @@ func (ts *TableSearch) FirstItemWithPrefix(prefix []byte) error {
 	if err := ts.Error(); err != nil {
 		return err
 	}
-	if !bytes.HasPrefix(ts.Item, prefix) {
+	if !bytes.HasPrefix(ts.Item, prefix) {  //搜索，并比较第一条数据
 		return io.EOF
 	}
 	return nil
 }
 
 // NextItem advances to the next item.
-func (ts *TableSearch) NextItem() bool {
+func (ts *TableSearch) NextItem() bool {  // 猜测：每次调用，返回前缀匹配的第一个KEY
 	if ts.err != nil {
 		return false
 	}
 	if ts.nextItemNoop {  //一开始 nextItemNoop 为false
-		ts.nextItemNoop = false
+		ts.nextItemNoop = false  //第一条数据的游标已经赋值了，所以这里有这种极其变态的操作！！！
 		return true
 	}
 
-	ts.err = ts.nextBlock()
+	ts.err = ts.nextBlock()  //对 Item 字段赋值
 	if ts.err != nil {
 		if ts.err != io.EOF {
 			ts.err = fmt.Errorf("cannot obtain the next block to search in the table: %w", ts.err)
@@ -168,7 +168,7 @@ func (ts *TableSearch) nextBlock() error {  //初筛的数据放到heap，再精
 		return err
 	}
 
-	heap.Pop(&ts.psHeap)
+	heap.Pop(&ts.psHeap)  // 某种意义上也是 nextPart
 
 	if len(ts.psHeap) == 0 {
 		return io.EOF
@@ -215,7 +215,7 @@ func (psh *partSearchHeap) Push(x interface{}) {
 	*psh = append(*psh, x.(*partSearch))
 }
 
-func (psh *partSearchHeap) Pop() interface{} {
+func (psh *partSearchHeap) Pop() interface{} {  //弹出就是把数组最后一个元素踢掉
 	a := *psh
 	v := a[len(a)-1]
 	*psh = a[:len(a)-1]

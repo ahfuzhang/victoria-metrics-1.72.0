@@ -14,13 +14,13 @@ type partSearch struct {  //类似游标的设计方法，成员保存了当前�
 	// Item contains the last item found after the call to NextItem.
 	//
 	// The Item content is valid until the next call to NextItem.
-	Item []byte  //猜测是 block 中的数据
+	Item []byte  //游标，指向当前的item
 
 	// p is a part to search.
 	p *part  // 每个part search指向对应的 part.  字段内容来自part对象
 
 	// The remaining metaindex rows to scan, obtained from p.mrs.
-	mrs []metaindexRow  // 这个数组直接复制 part 对象中的对应数组
+	mrs []metaindexRow  // 这个数组直接复制 part 对象中的对应数组, 指向多个indxBlock
        // 数组的 firstItem字段是排序的，因此可以根据firstItem来做二分查找
 	// The remaining block headers to scan in the current metaindexRow.
 	bhs []blockHeader  // 当前扫描到的 metaindexRow中的 blockHeader 数组, aka indexBlock
@@ -36,7 +36,7 @@ type partSearch struct {  //类似游标的设计方法，成员保存了当前�
 
 	sb storageBlock  // 缓存从items.bin, lens.bin中读出的数据
 
-	ib        *inmemoryBlock  // 当前搜索到的块里面的多个 time series
+	ib        *inmemoryBlock  // 当前搜索到的块里面的多个 time series, 仅仅只是指向当前的inmemoryBlock
 	ibItemIdx int  // inmemoryBlock内的游标的指向位置。最终搜索到的位置
 }
 
@@ -55,17 +55,17 @@ func (ps *partSearch) reset() {
 	ps.sb.Reset()
 
 	ps.ib = nil   //一开始，inMemoryBlock是空的. nextBlock()调用的时候会产生赋值
-	ps.ibItemIdx = 0
+	ps.ibItemIdx = 0  //猜测，fistItem使用了头的信息，因此inMemoryBlock是不会从0开始的
 }
 
 // Init initializes ps for search in the p.
 //
 // Use Seek for search in p.
-func (ps *partSearch) Init(p *part) {
+func (ps *partSearch) Init(p *part) {  //通过part对象来初始化partSearch
 	ps.reset()
 
 	ps.p = p
-	ps.idxbCache = p.idxbCache
+	ps.idxbCache = p.idxbCache  // indexBlock的cache
 	ps.ibCache = p.ibCache  // cache使用了part对象的cache
 }
 
@@ -202,18 +202,18 @@ func (ps *partSearch) tryFastSeek(k []byte) bool {
 
 // NextItem advances to the next Item.
 //
-// Returns true on success.
+// Returns true on success.  // ??? 看不懂
 func (ps *partSearch) NextItem() bool {  //检查游标是否可用
 	if ps.err != nil {
 		return false  //找不到的话， Seek中会把err设置为EOF
 	}
 
 	items := ps.ib.items
-	if ps.ibItemIdx < len(items) {
+	if ps.ibItemIdx < len(items) {  // ??? 看不懂
 		// Fast path - the current block contains more items.
 		// Proceed to the next item.
 		ps.Item = items[ps.ibItemIdx].Bytes(ps.ib.data)
-		ps.ibItemIdx++
+		ps.ibItemIdx++  //游标指向block内的下一条数据
 		return true
 	}
 
@@ -244,8 +244,8 @@ func (ps *partSearch) nextBlock() error {  //当key比firstItem还要小的时�
 			return err
 		}
 	}
-	bh := &ps.bhs[0]  //取block游标的第0个元素
-	ps.bhs = ps.bhs[1:]  //游标指向下一个block
+	bh := &ps.bhs[0]  //第0个indexBlock
+	ps.bhs = ps.bhs[1:]  //剩余的indexBlock
 	ib, err := ps.getInmemoryBlock(bh)  //把这个block加载到内存
 	if err != nil {
 		return err
@@ -295,7 +295,7 @@ func (ps *partSearch) readIndexBlock(mr *metaindexRow) (*indexBlock, error) {  /
 func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {  //根据blockHeader，加载数据到内存
 	var ibKey inmemoryBlockCacheKey
 	ibKey.Init(bh)  // 以偏移量作为cache的key
-	ib := ps.ibCache.Get(ibKey)  //猜测，拷贝对象的引用，可以提升CPU cache命中率
+	ib := ps.ibCache.Get(ibKey)
 	if ib != nil {
 		return ib, nil
 	}
@@ -304,7 +304,7 @@ func (ps *partSearch) getInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) 
 		return nil, err
 	}
 	ps.ibCache.Put(ibKey, ib)  // 放到 index block cache 中
-	return ib, nil
+	return ib, nil  //这个cache最大是多大呢? 理论上整个part文件都会被加载到内存
 }
 
 func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error) {  // 根据blockHeader的信息，加载items.bin和lens.bin文件中的对应信息
@@ -325,14 +325,14 @@ func (ps *partSearch) readInmemoryBlock(bh *blockHeader) (*inmemoryBlock, error)
 }
 //  data 把所有time sereis的数据，排序后顺序放一起。 items记录了每个ts的起始位置
 func binarySearchKey(data []byte, items []Item, key []byte) int {
-	if len(items) == 0 {
+	if len(items) == 0 {  //在一个block内搜索
 		return 0
 	}
 	if string(key) <= items[0].String(data) {
-		// Fast path - the item is the first.
+		// Fast path - the item is the first.  // ??? 为什么小于就是算找到，没搞懂
 		return 0
 	}
-	items = items[1:]
+	items = items[1:]  //猜测，firstItem比较过之后，就没必要再比较第0条了
 	offset := uint(1)
 
 	// This has been copy-pasted from https://golang.org/src/sort/search.go

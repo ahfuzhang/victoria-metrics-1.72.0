@@ -296,14 +296,14 @@ type vmselectRequestCtx struct {  //查询过程中的上下文对象
 
 	sq   storage.SearchQuery  //原始请求
 	tfss []*storage.TagFilters  //多组metric，会解析成更加具体的表达式
-	sr   storage.Search
+	sr   storage.Search  //搜索对象
 	mb   storage.MetricBlock  //搜索到的metric数据
 
 	// timeout in seconds for the current request
 	timeout uint64
 
 	// deadline in unix timestamp seconds for the current request.
-	deadline uint64
+	deadline uint64  //超时时间由用户端发过来
 }
 
 func (ctx *vmselectRequestCtx) readTimeRange() (storage.TimeRange, error) {
@@ -1132,7 +1132,7 @@ var (
 	vmselectMetricBlocksRead = metrics.NewCounter(`vm_vmselect_metric_blocks_read_total`)
 	vmselectMetricRowsRead   = metrics.NewCounter(`vm_vmselect_metric_rows_read_total`)
 )
-
+  // 解析查询表达式
 func (ctx *vmselectRequestCtx) setupTfss(s *storage.Storage, tr storage.TimeRange) error {
 	tfss := ctx.tfss[:0]
 	accountID := ctx.sq.AccountID

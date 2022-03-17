@@ -106,7 +106,7 @@ type Storage struct {
 	pendingNextDayMetricIDs     *uint64set.Set  //把新的metricid写入到这里，记录每天产生的新metricID
 
 	// prefetchedMetricIDs contains metricIDs for pre-fetched metricNames in the prefetchMetricNames function.
-	prefetchedMetricIDs atomic.Value
+	prefetchedMetricIDs atomic.Value  //*uint64set.Set类型
 
 	// prefetchedMetricIDsDeadline is used for periodic reset of prefetchedMetricIDs in order to limit its size under high rate of creating new series.
 	prefetchedMetricIDsDeadline uint64
@@ -128,8 +128,8 @@ type Storage struct {
 	snapshotLock sync.Mutex
 
 	// The minimum timestamp when composite index search can be used.
-	minTimestampForCompositeIndex int64   // ??? 看不懂这个字段是要干啥
-
+	minTimestampForCompositeIndex int64   //记录了组合索引的最小时间
+         // 如果查询请求在这个时间范围内，则可以直接使用cache
 	// An inmemory set of deleted metricIDs.
 	//
 	// It is safe to keep the set in memory even for big number of deleted
@@ -996,7 +996,7 @@ func marshalUint64Set(dst []byte, m *uint64set.Set) []byte {
 	return dst
 }
 
-func mustGetMinTimestampForCompositeIndex(metadataDir string, isEmptyDB bool) int64 {
+func mustGetMinTimestampForCompositeIndex(metadataDir string, isEmptyDB bool) int64 {  //元数据目录，有个文件记录了索引支持的最小时间
 	path := metadataDir + "/minTimestampForCompositeIndex"
 	minTimestamp, err := loadMinTimestampForCompositeIndex(path)
 	if err == nil {
@@ -1004,14 +1004,14 @@ func mustGetMinTimestampForCompositeIndex(metadataDir string, isEmptyDB bool) in
 	}
 	if !os.IsNotExist(err) {
 		logger.Errorf("cannot read minTimestampForCompositeIndex, so trying to re-create it; error: %s", err)
-	}
+	}  //文件不存在就创建一个
 	date := time.Now().UnixNano() / 1e6 / msecPerDay
 	if !isEmptyDB {
 		// The current and the next day can already contain non-composite indexes,
 		// so they cannot be queried with composite indexes.
 		date += 2
 	} else {
-		date = 0
+		date = 0  // ??? 为什么第一次创建DB的时候，要使用日期为 0
 	}
 	minTimestamp = date * msecPerDay
 	dateBuf := encoding.MarshalInt64(nil, minTimestamp)
@@ -1204,8 +1204,8 @@ func (s *Storage) prefetchMetricNames(tsids []TSID, deadline uint64) error {
 	idb := s.idb()
 	is := idb.getIndexSearch(accountID, projectID, deadline)
 	defer idb.putIndexSearch(is)
-	for loops, metricID := range metricIDs {
-		if loops&paceLimiterSlowIterationsMask == 0 {
+	for loops, metricID := range metricIDs {  //遍历本次查询出现的新的metricid
+		if loops&paceLimiterSlowIterationsMask == 0 {  //低12位为0  //??? 啥意思
 			if err := checkSearchDeadlineAndPace(is.deadline); err != nil {
 				return err
 			}

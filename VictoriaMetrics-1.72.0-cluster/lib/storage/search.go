@@ -131,13 +131,13 @@ type Search struct {
 	ts tableSearch
 
 	// tr contains time range used in the serach.
-	tr TimeRange
+	tr TimeRange  //查询时间范围
 
 	// tfss contains tag filters used in the search.
-	tfss []*TagFilters
+	tfss []*TagFilters  //过滤表达式
 
 	// deadline in unix timestamp seconds for the current search.
-	deadline uint64
+	deadline uint64  //超时时间
 
 	err error
 
@@ -181,7 +181,7 @@ func (s *Search) Init(storage *Storage, tfss []*TagFilters, tr TimeRange, maxMet
 
 	tsids, err := storage.searchTSIDs(tfss, tr, maxMetrics, deadline)  // 根据标签，搜索符合的TSID
 	if err == nil {
-		err = storage.prefetchMetricNames(tsids, deadline)
+		err = storage.prefetchMetricNames(tsids, deadline)  //猜测是根据tsid找到metric的完整信息
 	}
 	// It is ok to call Init on error from storage.searchTSIDs.
 	// Init must be called before returning because it will fail

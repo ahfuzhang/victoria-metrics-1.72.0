@@ -15,7 +15,7 @@ import (
 )
 
 // blockStreamWriter represents block stream writer.
-type blockStreamWriter struct {
+type blockStreamWriter struct {  //相当于用于写的filePart
 	compressLevel int
 	path          string
 

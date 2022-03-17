@@ -22,7 +22,7 @@ const (
 //
 // The cache evicts inactive entries after the given expireDuration.
 // Recently accessed entries survive expireDuration.
-type Cache struct {
+type Cache struct {  //查询表达式缓存等缓存的承载类
 	curr atomic.Value
 	prev atomic.Value
 
@@ -145,11 +145,11 @@ func (c *Cache) cacheSizeWatcher() {
 		select {
 		case <-c.stopCh:
 			return
-		case <-t.C:
+		case <-t.C:  //阻塞一分钟
 		}
 		var cs fastcache.Stats
 		curr := c.curr.Load().(*fastcache.Cache)
-		curr.UpdateStats(&cs)
+		curr.UpdateStats(&cs)  //数据上报
 		if cs.BytesSize >= uint64(0.9*float64(cs.MaxBytesSize)) {
 			maxBytesSize = cs.MaxBytesSize
 			break

@@ -22,7 +22,7 @@ type partSearch struct {  //封装在part中搜索的能力
 	p *part
 
 	// tsids contains sorted tsids to search.
-	tsids []TSID
+	tsids []TSID  //在索引中搜索到的tsid
 
 	// tsidIdx points to the currently searched tsid in tsids.
 	tsidIdx int
