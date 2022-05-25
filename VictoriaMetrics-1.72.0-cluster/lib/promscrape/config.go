@@ -11,6 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+	xxhash "github.com/cespare/xxhash/v2"
+	"gopkg.in/yaml.v2"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/envtemplate"
@@ -31,9 +35,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discovery/kubernetes"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discovery/openstack"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/proxy"
-	"github.com/VictoriaMetrics/metrics"
-	xxhash "github.com/cespare/xxhash/v2"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -56,9 +57,9 @@ var (
 )
 
 // Config represents essential parts from Prometheus config defined at https://prometheus.io/docs/prometheus/latest/configuration/configuration/
-type Config struct {
+type Config struct { // 配置文件的定义   /etc/prometheus/prometheus_cfg.yaml
 	Global            GlobalConfig   `yaml:"global,omitempty"`
-	ScrapeConfigs     []ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	ScrapeConfigs     []ScrapeConfig `yaml:"scrape_configs,omitempty"` // 抓取目标的配置
 	ScrapeConfigFiles []string       `yaml:"scrape_config_files,omitempty"`
 
 	// This is set to the directory from where the config has been loaded.
@@ -114,7 +115,7 @@ type GlobalConfig struct {
 // ScrapeConfig represents essential parts for `scrape_config` section of Prometheus config.
 //
 // See https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config
-type ScrapeConfig struct {
+type ScrapeConfig struct { // 抓取目标的配置
 	JobName              string                      `yaml:"job_name"`
 	ScrapeInterval       time.Duration               `yaml:"scrape_interval,omitempty"`
 	ScrapeTimeout        time.Duration               `yaml:"scrape_timeout,omitempty"`
@@ -137,9 +138,9 @@ type ScrapeConfig struct {
 	DockerSwarmSDConfigs  []dockerswarm.SDConfig  `yaml:"dockerswarm_sd_configs,omitempty"`
 	EC2SDConfigs          []ec2.SDConfig          `yaml:"ec2_sd_configs,omitempty"`
 	EurekaSDConfigs       []eureka.SDConfig       `yaml:"eureka_sd_configs,omitempty"`
-	FileSDConfigs         []FileSDConfig          `yaml:"file_sd_configs,omitempty"`
+	FileSDConfigs         []FileSDConfig          `yaml:"file_sd_configs,omitempty"` // 文件配置
 	GCESDConfigs          []gce.SDConfig          `yaml:"gce_sd_configs,omitempty"`
-	HTTPSDConfigs         []http.SDConfig         `yaml:"http_sd_configs,omitempty"`
+	HTTPSDConfigs         []http.SDConfig         `yaml:"http_sd_configs,omitempty"` // http sd 配置
 	KubernetesSDConfigs   []kubernetes.SDConfig   `yaml:"kubernetes_sd_configs,omitempty"`
 	OpenStackSDConfigs    []openstack.SDConfig    `yaml:"openstack_sd_configs,omitempty"`
 	StaticConfigs         []StaticConfig          `yaml:"static_configs,omitempty"`
@@ -213,7 +214,7 @@ func (sc *ScrapeConfig) mustStop() {
 // FileSDConfig represents file-based service discovery config.
 //
 // See https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config
-type FileSDConfig struct {
+type FileSDConfig struct { // 文件SD配置
 	Files []string `yaml:"files"`
 	// `refresh_interval` is ignored. See `-prometheus.fileSDCheckInterval`
 }
@@ -239,8 +240,8 @@ func loadStaticConfigs(path string) ([]StaticConfig, error) {
 	return stcs, nil
 }
 
-// loadConfig loads Prometheus config from the given path.
-func loadConfig(path string) (*Config, []byte, error) {
+// loadConfig loads Prometheus config from the given path.  //加载prometheus的配置文件
+func loadConfig(path string) (*Config, []byte, error) { // 读出二进制内容，但是不解析
 	data, err := fs.ReadFileOrHTTP(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot read Prometheus config from %q: %w", path, err)
@@ -254,7 +255,7 @@ func loadConfig(path string) (*Config, []byte, error) {
 }
 
 func loadScrapeConfigFiles(baseDir string, scrapeConfigFiles []string) ([]ScrapeConfig, []byte, error) {
-	var scrapeConfigs []ScrapeConfig
+	var scrapeConfigs []ScrapeConfig // 解析抓取配置
 	var scsData []byte
 	for _, filePath := range scrapeConfigFiles {
 		filePath := fs.GetFilepath(baseDir, filePath)
@@ -274,7 +275,7 @@ func loadScrapeConfigFiles(baseDir string, scrapeConfigFiles []string) ([]Scrape
 			}
 			data = envtemplate.Replace(data)
 			var scs []ScrapeConfig
-			if err = yaml.UnmarshalStrict(data, &scs); err != nil {
+			if err = yaml.UnmarshalStrict(data, &scs); err != nil { // ??? 为什么不按照JSON来解析
 				return nil, nil, fmt.Errorf("cannot parse %q: %w", path, err)
 			}
 			scrapeConfigs = append(scrapeConfigs, scs...)
@@ -290,8 +291,8 @@ func IsDryRun() bool {
 	return *dryRun
 }
 
-func (cfg *Config) parseData(data []byte, path string) ([]byte, error) {
-	if err := unmarshalMaybeStrict(data, cfg); err != nil {
+func (cfg *Config) parseData(data []byte, path string) ([]byte, error) { // 解析配置文件  /etc/prometheus/prometheus_cfg.yaml
+	if err := unmarshalMaybeStrict(data, cfg); err != nil { // 解析yaml
 		return nil, fmt.Errorf("cannot unmarshal data: %w", err)
 	}
 	absPath, err := filepath.Abs(path)
@@ -547,7 +548,7 @@ func (cfg *Config) getEurekaSDScrapeWork(prev []*ScrapeWork) []*ScrapeWork {
 }
 
 // getFileSDScrapeWork returns `file_sd_configs` ScrapeWork from cfg.
-func (cfg *Config) getFileSDScrapeWork(prev []*ScrapeWork) []*ScrapeWork {
+func (cfg *Config) getFileSDScrapeWork(prev []*ScrapeWork) []*ScrapeWork { // 文件SD的配置解析
 	// Create a map for the previous scrape work.
 	swsMapPrev := make(map[string][]*ScrapeWork)
 	for _, sw := range prev {
@@ -819,12 +820,13 @@ type scrapeWorkConfig struct {
 	seriesLimit          int
 }
 
-type targetLabelsGetter interface {
+type targetLabelsGetter interface { // 唯独 file sd 没有实现拉取target的实现
 	GetLabels(baseDir string) ([]map[string]string, error)
 }
 
-func appendSDScrapeWork(dst []*ScrapeWork, sdc targetLabelsGetter, baseDir string, swc *scrapeWorkConfig, discoveryType string) ([]*ScrapeWork, bool) {
-	targetLabels, err := sdc.GetLabels(baseDir)
+func appendSDScrapeWork(dst []*ScrapeWork, sdc targetLabelsGetter, baseDir string, swc *scrapeWorkConfig,
+	discoveryType string) ([]*ScrapeWork, bool) {
+	targetLabels, err := sdc.GetLabels(baseDir) // 获取了 http sd 中的配置
 	if err != nil {
 		logger.Errorf("skipping %s targets for job_name %q because of error: %s", discoveryType, swc.jobName, err)
 		return dst, false
@@ -832,7 +834,8 @@ func appendSDScrapeWork(dst []*ScrapeWork, sdc targetLabelsGetter, baseDir strin
 	return appendScrapeWorkForTargetLabels(dst, swc, targetLabels, discoveryType), true
 }
 
-func appendScrapeWorkForTargetLabels(dst []*ScrapeWork, swc *scrapeWorkConfig, targetLabels []map[string]string, discoveryType string) []*ScrapeWork {
+func appendScrapeWorkForTargetLabels(dst []*ScrapeWork, swc *scrapeWorkConfig, targetLabels []map[string]string,
+	discoveryType string) []*ScrapeWork {
 	startTime := time.Now()
 	// Process targetLabels in parallel in order to reduce processing time for big number of targetLabels.
 	type result struct {
@@ -840,11 +843,11 @@ func appendScrapeWorkForTargetLabels(dst []*ScrapeWork, swc *scrapeWorkConfig, t
 		err error
 	}
 	goroutines := cgroup.AvailableCPUs()
-	resultCh := make(chan result, len(targetLabels))
+	resultCh := make(chan result, len(targetLabels)) // targetLabels 是每个 expoter的配置
 	workCh := make(chan map[string]string, goroutines)
 	for i := 0; i < goroutines; i++ {
-		go func() {
-			for metaLabels := range workCh {
+		go func() { // 执行任务队列中的任务
+			for metaLabels := range workCh { // N 个协程，从工作队列中获取任务
 				target := metaLabels["__address__"]
 				sw, err := swc.getScrapeWork(target, nil, metaLabels)
 				if err != nil {
@@ -857,7 +860,7 @@ func appendScrapeWorkForTargetLabels(dst []*ScrapeWork, swc *scrapeWorkConfig, t
 			}
 		}()
 	}
-	for _, metaLabels := range targetLabels {
+	for _, metaLabels := range targetLabels { // 任务放入队列
 		workCh <- metaLabels
 	}
 	close(workCh)
@@ -875,7 +878,8 @@ func appendScrapeWorkForTargetLabels(dst []*ScrapeWork, swc *scrapeWorkConfig, t
 	return dst
 }
 
-func (sdc *FileSDConfig) appendScrapeWork(dst []*ScrapeWork, swsMapPrev map[string][]*ScrapeWork, baseDir string, swc *scrapeWorkConfig) []*ScrapeWork {
+func (sdc *FileSDConfig) appendScrapeWork(dst []*ScrapeWork, swsMapPrev map[string][]*ScrapeWork, baseDir string,
+	swc *scrapeWorkConfig) []*ScrapeWork { // 加载文件中的 targets 配置
 	for _, file := range sdc.Files {
 		pathPattern := fs.GetFilepath(baseDir, file)
 		paths := []string{pathPattern}
@@ -920,7 +924,8 @@ func (sdc *FileSDConfig) appendScrapeWork(dst []*ScrapeWork, swsMapPrev map[stri
 	return dst
 }
 
-func (stc *StaticConfig) appendScrapeWork(dst []*ScrapeWork, swc *scrapeWorkConfig, metaLabels map[string]string) []*ScrapeWork {
+func (stc *StaticConfig) appendScrapeWork(dst []*ScrapeWork, swc *scrapeWorkConfig,
+	metaLabels map[string]string) []*ScrapeWork {
 	for _, target := range stc.Targets {
 		if target == "" {
 			// Do not return this error, since other targets may be valid
@@ -974,7 +979,8 @@ func needSkipScrapeWork(key string, membersCount, replicasCount, memberNum int) 
 
 var scrapeWorkKeyBufPool bytesutil.ByteBufferPool
 
-func (swc *scrapeWorkConfig) getScrapeWork(target string, extraLabels, metaLabels map[string]string) (*ScrapeWork, error) {
+func (swc *scrapeWorkConfig) getScrapeWork(target string, extraLabels, metaLabels map[string]string) (*ScrapeWork,
+	error) { // 抓取expoter数据的过程
 	labels := mergeLabels(swc, target, extraLabels, metaLabels)
 	var originalLabels []prompbmarshal.Label
 	if !*dropOriginalLabels {
@@ -1027,7 +1033,7 @@ func (swc *scrapeWorkConfig) getScrapeWork(target string, extraLabels, metaLabel
 		return nil, nil
 	}
 	addressRelabeled = addMissingPort(schemeRelabeled, addressRelabeled)
-	metricsPathRelabeled := promrelabel.GetLabelValueByName(labels, "__metrics_path__")
+	metricsPathRelabeled := promrelabel.GetLabelValueByName(labels, "__metrics_path__") // 重点来了
 	if metricsPathRelabeled == "" {
 		metricsPathRelabeled = "/metrics"
 	}
@@ -1165,7 +1171,8 @@ func getParamsFromLabels(labels []prompbmarshal.Label, paramsOrig map[string][]s
 	return m
 }
 
-func mergeLabels(swc *scrapeWorkConfig, target string, extraLabels, metaLabels map[string]string) []prompbmarshal.Label {
+func mergeLabels(swc *scrapeWorkConfig, target string,
+	extraLabels, metaLabels map[string]string) []prompbmarshal.Label { // 合并标签
 	// See https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
 	m := make(map[string]string, 6+len(swc.externalLabels)+len(swc.params)+len(extraLabels)+len(metaLabels))
 	for k, v := range swc.externalLabels {
@@ -1174,7 +1181,7 @@ func mergeLabels(swc *scrapeWorkConfig, target string, extraLabels, metaLabels m
 	m["job"] = swc.jobName
 	m["__address__"] = target
 	m["__scheme__"] = swc.scheme
-	m["__metrics_path__"] = swc.metricsPath
+	m["__metrics_path__"] = swc.metricsPath // 先使用系统默认配置
 	m["__scrape_interval__"] = swc.scrapeInterval.String()
 	m["__scrape_timeout__"] = swc.scrapeTimeout.String()
 	for k, args := range swc.params {
@@ -1188,7 +1195,7 @@ func mergeLabels(swc *scrapeWorkConfig, target string, extraLabels, metaLabels m
 	for k, v := range extraLabels {
 		m[k] = v
 	}
-	for k, v := range metaLabels {
+	for k, v := range metaLabels { // expoter上的配置，会替换掉系统的配置
 		m[k] = v
 	}
 	result := make([]prompbmarshal.Label, 0, len(m))

@@ -25,7 +25,7 @@ type SDConfig struct {
 }
 
 // GetLabels returns http service discovery labels according to sdc.
-func (sdc *SDConfig) GetLabels(baseDir string) ([]map[string]string, error) {
+func (sdc *SDConfig) GetLabels(baseDir string) ([]map[string]string, error) { // 通过http协议获得expoter的信息
 	cfg, err := getAPIConfig(sdc, baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get API config: %w", err)
@@ -44,7 +44,7 @@ func addHTTPTargetLabels(src []httpGroupTarget, sourceURL string) []map[string]s
 		for _, target := range targetGroup.Targets {
 			m := make(map[string]string, len(labels))
 			for k, v := range labels {
-				m[k] = v
+				m[k] = v //  这里写入了系统标签
 			}
 			m["__address__"] = target
 			m["__meta_url"] = sourceURL

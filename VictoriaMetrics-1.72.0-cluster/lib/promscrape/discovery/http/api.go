@@ -6,9 +6,10 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discoveryutils"
 	"github.com/VictoriaMetrics/fasthttp"
 	"github.com/VictoriaMetrics/metrics"
+
+	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discoveryutils"
 )
 
 var configMap = discoveryutils.NewConfigMap()
@@ -23,7 +24,7 @@ type apiConfig struct {
 
 // httpGroupTarget respresent prometheus GroupTarget
 // https://prometheus.io/docs/prometheus/latest/http_sd/
-type httpGroupTarget struct {
+type httpGroupTarget struct { // http sd 中返回的内容
 	Targets []string          `json:"targets"`
 	Labels  map[string]string `json:"labels"`
 }

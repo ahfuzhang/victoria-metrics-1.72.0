@@ -6,10 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	xxhash "github.com/cespare/xxhash/v2"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/prompbmarshal"
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 // parsedRelabelConfig contains parsed `relabel_config`.
@@ -271,7 +272,8 @@ func (prc *parsedRelabelConfig) apply(labels []prompbmarshal.Label, labelsOffset
 	}
 }
 
-func (prc *parsedRelabelConfig) replaceFullString(s, replacement string, hasCaptureGroupInReplacement bool) (string, bool) {
+func (prc *parsedRelabelConfig) replaceFullString(s, replacement string, hasCaptureGroupInReplacement bool) (string,
+	bool) {
 	prefix, complete := prc.regexOriginal.LiteralPrefix()
 	if complete && !hasCaptureGroupInReplacement {
 		if s == prefix {
@@ -315,7 +317,8 @@ func (prc *parsedRelabelConfig) replaceFullString(s, replacement string, hasCapt
 	return result, true
 }
 
-func (prc *parsedRelabelConfig) replaceStringSubmatches(s, replacement string, hasCaptureGroupInReplacement bool) (string, bool) {
+func (prc *parsedRelabelConfig) replaceStringSubmatches(s, replacement string,
+	hasCaptureGroupInReplacement bool) (string, bool) {
 	re := prc.regexOriginal
 	prefix, complete := re.LiteralPrefix()
 	if complete && !hasCaptureGroupInReplacement {
@@ -404,7 +407,7 @@ func setLabelValue(labels []prompbmarshal.Label, labelsOffset int, name, value s
 }
 
 // GetLabelByName returns label with the given name from labels.
-func GetLabelByName(labels []prompbmarshal.Label, name string) *prompbmarshal.Label {
+func GetLabelByName(labels []prompbmarshal.Label, name string) *prompbmarshal.Label { // 遍历搜索标签
 	for i := range labels {
 		label := &labels[i]
 		if label.Name == name {

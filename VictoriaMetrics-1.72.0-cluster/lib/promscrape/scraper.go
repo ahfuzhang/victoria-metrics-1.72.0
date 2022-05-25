@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/procutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/prompbmarshal"
@@ -23,7 +25,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discovery/http"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discovery/kubernetes"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape/discovery/openstack"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -51,12 +52,12 @@ func CheckConfig() error {
 // Init initializes Prometheus scraper with config from the `-promscrape.config`.
 //
 // Scraped data is passed to pushData.
-func Init(pushData func(wr *prompbmarshal.WriteRequest)) {
+func Init(pushData func(wr *prompbmarshal.WriteRequest)) { // 初始化抓取配置
 	globalStopChan = make(chan struct{})
 	scraperWG.Add(1)
 	go func() {
 		defer scraperWG.Done()
-		runScraper(*promscrapeConfigFile, pushData, globalStopChan)
+		runScraper(*promscrapeConfigFile, pushData, globalStopChan) // 启动抓取组件
 	}()
 }
 
@@ -74,7 +75,7 @@ var (
 	PendingScrapeConfigs int32
 
 	// configData contains -promscrape.config data
-	configData atomic.Value
+	configData atomic.Value // 这个对象来存储所有的配置
 )
 
 // WriteConfigData writes -promscrape.config contents to w
@@ -88,7 +89,8 @@ func WriteConfigData(w io.Writer) {
 	_, _ = w.Write(*b)
 }
 
-func runScraper(configFile string, pushData func(wr *prompbmarshal.WriteRequest), globalStopCh <-chan struct{}) {
+func runScraper(configFile string, pushData func(wr *prompbmarshal.WriteRequest),
+	globalStopCh <-chan struct{}) { // 启动抓取组件
 	if configFile == "" {
 		// Nothing to scrape.
 		return
@@ -100,28 +102,67 @@ func runScraper(configFile string, pushData func(wr *prompbmarshal.WriteRequest)
 	sighupCh := procutil.NewSighupChan()
 
 	logger.Infof("reading Prometheus configs from %q", configFile)
-	cfg, data, err := loadConfig(configFile)
+	cfg, data, err := loadConfig(configFile) // 加载配置
 	if err != nil {
 		logger.Fatalf("cannot read %q: %s", configFile, err)
 	}
 	marshaledData := cfg.marshal()
 	configData.Store(&marshaledData)
-	cfg.mustStart()
+	cfg.mustStart() // 从这里看，重新加载配置的成本较高
 
 	scs := newScrapeConfigs(pushData, globalStopCh)
-	scs.add("consul_sd_configs", *consul.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getConsulSDScrapeWork(swsPrev) })
-	scs.add("digitalocean_sd_configs", *digitalocean.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getDigitalOceanDScrapeWork(swsPrev) })
-	scs.add("dns_sd_configs", *dns.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getDNSSDScrapeWork(swsPrev) })
-	scs.add("docker_sd_configs", *docker.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getDockerSDScrapeWork(swsPrev) })
-	scs.add("dockerswarm_sd_configs", *dockerswarm.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getDockerSwarmSDScrapeWork(swsPrev) })
-	scs.add("ec2_sd_configs", *ec2.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getEC2SDScrapeWork(swsPrev) })
-	scs.add("eureka_sd_configs", *eureka.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getEurekaSDScrapeWork(swsPrev) })
-	scs.add("file_sd_configs", *fileSDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getFileSDScrapeWork(swsPrev) })
-	scs.add("gce_sd_configs", *gce.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getGCESDScrapeWork(swsPrev) })
-	scs.add("http_sd_configs", *http.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getHTTPDScrapeWork(swsPrev) })
-	scs.add("kubernetes_sd_configs", *kubernetes.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getKubernetesSDScrapeWork(swsPrev) })
-	scs.add("openstack_sd_configs", *openstack.SDCheckInterval, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getOpenStackSDScrapeWork(swsPrev) })
-	scs.add("static_configs", 0, func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork { return cfg.getStaticScrapeWork() })
+	scs.add("consul_sd_configs", *consul.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getConsulSDScrapeWork(swsPrev)
+	})
+	scs.add("digitalocean_sd_configs", *digitalocean.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getDigitalOceanDScrapeWork(swsPrev)
+	})
+	scs.add("dns_sd_configs", *dns.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getDNSSDScrapeWork(swsPrev)
+	})
+	scs.add("docker_sd_configs", *docker.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getDockerSDScrapeWork(swsPrev)
+	})
+	scs.add("dockerswarm_sd_configs", *dockerswarm.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getDockerSwarmSDScrapeWork(swsPrev)
+	})
+	scs.add("ec2_sd_configs", *ec2.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getEC2SDScrapeWork(swsPrev)
+	})
+	scs.add("eureka_sd_configs", *eureka.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getEurekaSDScrapeWork(swsPrev)
+	})
+	scs.add("file_sd_configs", *fileSDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getFileSDScrapeWork(swsPrev)
+	})
+	scs.add("gce_sd_configs", *gce.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getGCESDScrapeWork(swsPrev)
+	})
+	scs.add("http_sd_configs", *http.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getHTTPDScrapeWork(swsPrev)
+	})
+	scs.add("kubernetes_sd_configs", *kubernetes.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getKubernetesSDScrapeWork(swsPrev)
+	})
+	scs.add("openstack_sd_configs", *openstack.SDCheckInterval, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getOpenStackSDScrapeWork(swsPrev)
+	})
+	scs.add("static_configs", 0, func(cfg *Config,
+		swsPrev []*ScrapeWork) []*ScrapeWork {
+		return cfg.getStaticScrapeWork()
+	})
 
 	var tickerCh <-chan time.Time
 	if *configCheckInterval > 0 {
@@ -130,10 +171,10 @@ func runScraper(configFile string, pushData func(wr *prompbmarshal.WriteRequest)
 		defer ticker.Stop()
 	}
 	for {
-		scs.updateConfig(cfg)
+		scs.updateConfig(cfg) // 配置文件更新后，把配置文件丢在管道里
 	waitForChans:
 		select {
-		case <-sighupCh:
+		case <-sighupCh: // 猜测这里是为了处理reload信号
 			logger.Infof("SIGHUP received; reloading Prometheus configs from %q", configFile)
 			cfgNew, dataNew, err := loadConfig(configFile)
 			if err != nil {
@@ -196,7 +237,8 @@ func newScrapeConfigs(pushData func(wr *prompbmarshal.WriteRequest), globalStopC
 	}
 }
 
-func (scs *scrapeConfigs) add(name string, checkInterval time.Duration, getScrapeWork func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork) {
+func (scs *scrapeConfigs) add(name string, checkInterval time.Duration,
+	getScrapeWork func(cfg *Config, swsPrev []*ScrapeWork) []*ScrapeWork) {
 	atomic.AddInt32(&PendingScrapeConfigs, 1)
 	scfg := &scrapeConfig{
 		name:          name,
@@ -289,7 +331,8 @@ type scraperGroup struct {
 	globalStopCh <-chan struct{}
 }
 
-func newScraperGroup(name string, pushData func(wr *prompbmarshal.WriteRequest), globalStopCh <-chan struct{}) *scraperGroup {
+func newScraperGroup(name string, pushData func(wr *prompbmarshal.WriteRequest),
+	globalStopCh <-chan struct{}) *scraperGroup {
 	sg := &scraperGroup{
 		name:     name,
 		m:        make(map[string]*scraper),

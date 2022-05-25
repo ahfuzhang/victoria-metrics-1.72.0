@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmagent/csvimport"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmagent/datadog"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmagent/graphite"
@@ -36,7 +38,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promscrape"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/protoparser/common"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/writeconcurrencylimiter"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 var (
@@ -79,7 +80,7 @@ func main() {
 		logger.Infof("-promscrape.config is ok; exitting with 0 status code")
 		return
 	}
-	if *dryRun {
+	if *dryRun { // ??? 为什么呢，这个值默认是false，配置怎么加载
 		if err := remotewrite.CheckRelabelConfigs(); err != nil {
 			logger.Fatalf("error when checking relabel configs: %s", err)
 		}
@@ -110,7 +111,7 @@ func main() {
 		opentsdbhttpServer = opentsdbhttpserver.MustStart(*opentsdbHTTPListenAddr, opentsdbhttp.InsertHandler)
 	}
 
-	promscrape.Init(remotewrite.Push)
+	promscrape.Init(remotewrite.Push) // 初始化抓取的配置
 
 	if len(*httpListenAddr) > 0 {
 		go httpserver.Serve(*httpListenAddr, requestHandler)
@@ -281,9 +282,9 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 		state := r.FormValue("state")
 		promscrape.WriteAPIV1Targets(w, state)
 		return true
-	case "/-/reload":
+	case "/-/reload": // 重新加载配置
 		promscrapeConfigReloadRequests.Inc()
-		procutil.SelfSIGHUP()
+		procutil.SelfSIGHUP() // 看起来是重启进程，应该避免用reload的模式来加载配置
 		w.WriteHeader(http.StatusOK)
 		return true
 	case "/ready":

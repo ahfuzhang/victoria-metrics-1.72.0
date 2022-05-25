@@ -275,7 +275,7 @@ scrape_configs:
 	}
 }
 
-func getFileSDScrapeWork(data []byte, path string) ([]*ScrapeWork, error) {
+func getFileSDScrapeWork(data []byte, path string) ([]*ScrapeWork, error) { // 文件SD的解析
 	var cfg Config
 	allData, err := cfg.parseData(data, path)
 	if err != nil {
