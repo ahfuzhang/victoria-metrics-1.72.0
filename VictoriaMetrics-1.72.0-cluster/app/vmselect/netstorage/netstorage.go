@@ -43,7 +43,7 @@ var (
 // Result is a single timeseries result.
 //
 // ProcessSearchQuery returns Result slice.
-type Result struct {
+type Result struct {  //存储层返回的结果
 	// The name of the metric.
 	MetricName storage.MetricName
 
@@ -118,7 +118,7 @@ func putTimeseriesWork(tsw *timeseriesWork) {
 }
 
 var tswPool sync.Pool
-
+   // 把计算结果，均分到n个计算协程
 func scheduleTimeseriesWork(workChs []chan *timeseriesWork, tsw *timeseriesWork) {
 	if len(workChs) == 1 {
 		// Fast path for a single worker
@@ -127,9 +127,9 @@ func scheduleTimeseriesWork(workChs []chan *timeseriesWork, tsw *timeseriesWork)
 	}
 	attempts := 0
 	for {
-		idx := fastrand.Uint32n(uint32(len(workChs)))
+		idx := fastrand.Uint32n(uint32(len(workChs)))  //  16核的话，随机选择一个协程对应的channel
 		select {
-		case workChs[idx] <- tsw:
+		case workChs[idx] <- tsw:  // 把工作任务丢到这个协程
 			return
 		default:
 			attempts++
@@ -141,7 +141,7 @@ func scheduleTimeseriesWork(workChs []chan *timeseriesWork, tsw *timeseriesWork)
 	}
 }
 
-func (tsw *timeseriesWork) do(r *Result, workerID uint) error {
+func (tsw *timeseriesWork) do(r *Result, workerID uint) error {  // 在结果的计算协程中调用, 每条数据调用一下这个函数
 	if atomic.LoadUint32(tsw.mustStop) != 0 {
 		return nil
 	}
@@ -155,7 +155,7 @@ func (tsw *timeseriesWork) do(r *Result, workerID uint) error {
 		return fmt.Errorf("error during time series unpacking: %w", err)
 	}
 	if len(r.Timestamps) > 0 || !rss.fetchData {
-		if err := tsw.f(r, workerID); err != nil {
+		if err := tsw.f(r, workerID); err != nil {  // f 是上层指定的处理函数
 			atomic.StoreUint32(tsw.mustStop, 1)
 			return err
 		}
@@ -164,8 +164,8 @@ func (tsw *timeseriesWork) do(r *Result, workerID uint) error {
 	return nil
 }
 
-func timeseriesWorker(ch <-chan *timeseriesWork, workerID uint) {
-	v := resultPool.Get()
+func timeseriesWorker(ch <-chan *timeseriesWork, workerID uint) {  // 计算协程
+	v := resultPool.Get()  // 从 channel 获取任务，进行计算
 	if v == nil {
 		v = &result{}
 	}
@@ -196,7 +196,7 @@ var resultPool sync.Pool
 // workerID is the id of the worker goroutine that calls f.
 // Data processing is immediately stopped if f returns non-nil error.
 //
-// rss becomes unusable after the call to RunParallel.
+// rss becomes unusable after the call to RunParallel.  // 在结果上执行并行计算
 func (rss *Results) RunParallel(f func(rs *Result, workerID uint) error) error {
 	defer func() {
 		putTmpBlocksFile(rss.tbf)
@@ -211,19 +211,19 @@ func (rss *Results) RunParallel(f func(rs *Result, workerID uint) error) error {
 	// - workChs is filled up, so it cannot accept new work items from other RunParallel calls.
 	workers := len(rss.packedTimeseries)
 	if workers > gomaxprocs {
-		workers = gomaxprocs
+		workers = gomaxprocs  // 并发数与CPU核数相关
 	}
 	if workers < 1 {
 		workers = 1
 	}
-	workChs := make([]chan *timeseriesWork, workers)
+	workChs := make([]chan *timeseriesWork, workers)  // 每个协程对应着一个channel
 	var workChsWG sync.WaitGroup
 	for i := 0; i < workers; i++ {
-		workChs[i] = make(chan *timeseriesWork, 16)
+		workChs[i] = make(chan *timeseriesWork, 16)  // 每个channel放16个结果. ??? 确定能喂饱吗
 		workChsWG.Add(1)
 		go func(workerID int) {
 			defer workChsWG.Done()
-			timeseriesWorker(workChs[workerID], uint(workerID))
+			timeseriesWorker(workChs[workerID], uint(workerID))  // worker 协程
 		}(i)
 	}
 
@@ -236,7 +236,7 @@ func (rss *Results) RunParallel(f func(rs *Result, workerID uint) error) error {
 		tsw.pts = &rss.packedTimeseries[i]
 		tsw.f = f
 		tsw.mustStop = &mustStop
-		scheduleTimeseriesWork(workChs, tsw)
+		scheduleTimeseriesWork(workChs, tsw)  // 看起来是把结果均分到N个计算协程里面去
 		tsws[i] = tsw
 	}
 	seriesProcessedTotal := len(rss.packedTimeseries)
@@ -261,12 +261,12 @@ func (rss *Results) RunParallel(f func(rs *Result, workerID uint) error) error {
 	for _, workCh := range workChs {
 		close(workCh)
 	}
-	workChsWG.Wait()
+	workChsWG.Wait()  // 等到所有计算协程结束
 
 	return firstErr
 }
 
-var perQueryRowsProcessed = metrics.NewHistogram(`vm_per_query_rows_processed_count`)
+var perQueryRowsProcessed = metrics.NewHistogram(`vm_per_query_rows_processed_count`)  // 体现每次查询结果的处理情况
 var perQuerySeriesProcessed = metrics.NewHistogram(`vm_per_query_series_processed_count`)
 
 var gomaxprocs = cgroup.AvailableCPUs()

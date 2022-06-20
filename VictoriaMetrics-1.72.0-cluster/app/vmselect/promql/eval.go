@@ -202,7 +202,7 @@ func getTimestamps(start, end, step int64) []int64 {
 }
 
 func evalExpr(ec *EvalConfig, e metricsql.Expr) ([]*timeseries, error) {  // 执行表达式
-	if me, ok := e.(*metricsql.MetricExpr); ok {
+	if me, ok := e.(*metricsql.MetricExpr); ok {  // MetricExpr 只查询一个metric的情况
 		re := &metricsql.RollupExpr{
 			Expr: me,
 		}
@@ -212,15 +212,15 @@ func evalExpr(ec *EvalConfig, e metricsql.Expr) ([]*timeseries, error) {  // 执
 		}
 		return rv, nil
 	}
-	if re, ok := e.(*metricsql.RollupExpr); ok {
+	if re, ok := e.(*metricsql.RollupExpr); ok {  // 聚合函数的情况
 		rv, err := evalRollupFunc(ec, "default_rollup", rollupDefault, e, re, nil)
 		if err != nil {
 			return nil, fmt.Errorf(`cannot evaluate %q: %w`, re.AppendString(nil), err)
 		}
 		return rv, nil
 	}
-	if fe, ok := e.(*metricsql.FuncExpr); ok {
-		nrf := getRollupFunc(fe.Name)
+	if fe, ok := e.(*metricsql.FuncExpr); ok {  // 执行函数的情况
+		nrf := getRollupFunc(fe.Name)  // 通过解析好的表达式，得到回调函数
 		if nrf == nil {
 			args, err := evalExprs(ec, fe.Args)
 			if err != nil {
@@ -241,15 +241,15 @@ func evalExpr(ec *EvalConfig, e metricsql.Expr) ([]*timeseries, error) {  // 执
 			}
 			return rv, nil
 		}
-		args, re, err := evalRollupFuncArgs(ec, fe)
-		if err != nil {
+		args, re, err := evalRollupFuncArgs(ec, fe)  // 表达式中找到确定函数的情况
+		if err != nil {     // 计算出handle需要的参数。 这里会嵌套执行
 			return nil, err
 		}
 		rf, err := nrf(args)
 		if err != nil {
 			return nil, err
 		}
-		rv, err := evalRollupFunc(ec, fe.Name, rf, e, re, nil)
+		rv, err := evalRollupFunc(ec, fe.Name, rf, e, re, nil)  // 参数的表达式都接到结果后，最后执行最外层的函数
 		if err != nil {
 			return nil, fmt.Errorf(`cannot evaluate %q: %w`, fe.AppendString(nil), err)
 		}
@@ -446,7 +446,7 @@ func evalExprs(ec *EvalConfig, es []metricsql.Expr) ([][]*timeseries, error) {
 	}
 	return rvs, nil
 }
-
+  // 计算 sum(xxx) 这种情况下，所需要的函数参数
 func evalRollupFuncArgs(ec *EvalConfig, fe *metricsql.FuncExpr) ([]interface{}, *metricsql.RollupExpr, error) {
 	var re *metricsql.RollupExpr
 	rollupArgIdx := metricsql.GetRollupArgIdx(fe)
@@ -460,7 +460,7 @@ func evalRollupFuncArgs(ec *EvalConfig, fe *metricsql.FuncExpr) ([]interface{}, 
 			args[i] = re
 			continue
 		}
-		ts, err := evalExpr(ec, arg)
+		ts, err := evalExpr(ec, arg)  // 嵌套执行，把汇聚函数里面的表达式进行执行，得到计算结果
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot evaluate arg #%d for %q: %w", i+1, fe.AppendString(nil), err)
 		}
@@ -497,7 +497,7 @@ func getRollupExprArg(arg metricsql.Expr) *metricsql.RollupExpr {
 	return &reNew
 }
 
-// expr may contain:
+// expr may contain:   //  执行 sum(xxx) 这种情况下得表达式
 // - rollupFunc(m) if iafc is nil
 // - aggrFunc(rollupFunc(m)) if iafc isn't nil
 func evalRollupFunc(ec *EvalConfig, funcName string, rf rollupFunc, expr metricsql.Expr, re *metricsql.RollupExpr, iafc *incrementalAggrFuncContext) ([]*timeseries, error) {
@@ -532,7 +532,7 @@ func evalRollupFunc(ec *EvalConfig, funcName string, rf rollupFunc, expr metrics
 	}
 	return tss, nil
 }
-
+  // 执行 sum(xxx) 这样的表达式
 func evalRollupFuncWithoutAt(ec *EvalConfig, funcName string, rf rollupFunc, expr metricsql.Expr, re *metricsql.RollupExpr, iafc *incrementalAggrFuncContext) ([]*timeseries, error) {
 	funcName = strings.ToLower(funcName)
 	ecNew := ec
@@ -715,7 +715,7 @@ var (
 	rollupResultCachePartialHits = metrics.NewCounter(`vm_rollup_result_cache_partial_hits_total`)
 	rollupResultCacheMiss        = metrics.NewCounter(`vm_rollup_result_cache_miss_total`)
 )
-
+  //   increase(metric_name{})  这样的表达式的计算
 func evalRollupFuncWithMetricExpr(ec *EvalConfig, funcName string, rf rollupFunc,
 	expr metricsql.Expr, me *metricsql.MetricExpr, iafc *incrementalAggrFuncContext, windowExpr *metricsql.DurationExpr) ([]*timeseries, error) {
 	if me.IsEmpty() {
@@ -838,7 +838,7 @@ func getRollupMemoryLimiter() *memoryLimiter {
 	})
 	return &rollupMemoryLimiter
 }
-
+  // 执行表达式  sum(metric_name{}) 这样的表达式， 已经从storage得到 metric_name{} 的结果
 func evalRollupWithIncrementalAggregate(funcName string, keepMetricNames bool, iafc *incrementalAggrFuncContext, rss *netstorage.Results, rcs []*rollupConfig,
 	preFunc func(values []float64, timestamps []int64), sharedTimestamps []int64) ([]*timeseries, error) {
 	err := rss.RunParallel(func(rs *netstorage.Result, workerID uint) error {

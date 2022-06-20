@@ -18,7 +18,7 @@ var minStalenessInterval = flag.Duration("search.minStalenessInterval", 0, "The 
 	"This flag could be useful for removing gaps on graphs generated from time series with irregular intervals between samples. "+
 	"See also '-search.maxStalenessInterval'")
 
-var rollupFuncs = map[string]newRollupFunc{
+var rollupFuncs = map[string]newRollupFunc{  // metricsQL 中各个函数的映射
 	"absent_over_time":        newRollupFuncOneArg(rollupAbsent),
 	"aggr_over_time":          newRollupFuncTwoArgs(rollupFake),
 	"ascent_over_time":        newRollupFuncOneArg(rollupAscentOverTime),
@@ -336,7 +336,7 @@ func getRollupConfigs(name string, rf rollupFunc, expr metricsql.Expr, start, en
 	return preFunc, rcs, nil
 }
 
-func getRollupFunc(funcName string) newRollupFunc {
+func getRollupFunc(funcName string) newRollupFunc {  // 查询映射表，找到 metricsQL中函数对应的handle
 	funcName = strings.ToLower(funcName)
 	return rollupFuncs[funcName]
 }
@@ -1439,7 +1439,7 @@ func rollupIncreasePure(rfa *rollupFuncArg) float64 {
 	return values[len(values)-1] - prevValue
 }
 
-func rollupDelta(rfa *rollupFuncArg) float64 {
+func rollupDelta(rfa *rollupFuncArg) float64 {  // increase()函数中的回调
 	// There is no need in handling NaNs here, since they must be cleaned up
 	// before calling rollup funcs.
 	values := rfa.values
@@ -1486,7 +1486,7 @@ func rollupDelta(rfa *rollupFuncArg) float64 {
 		// Assume that the value didn't change on the given interval.
 		return 0
 	}
-	return values[len(values)-1] - prevValue
+	return values[len(values)-1] - prevValue   // ??? 如果某个监控项掉零，这里就是负数？
 }
 
 func rollupDeltaPrometheus(rfa *rollupFuncArg) float64 {

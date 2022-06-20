@@ -57,7 +57,7 @@ func Exec(ec *EvalConfig, q string, isFirstPointOnly bool) ([]netstorage.Result,
 	}
 
 	maySort := maySortResults(e, rv)
-	result, err := timeseriesToResult(rv, maySort)
+	result, err := timeseriesToResult(rv, maySort)  //结果格式转换
 	if err != nil {
 		return nil, err
 	}
