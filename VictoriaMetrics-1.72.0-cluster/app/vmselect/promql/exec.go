@@ -10,12 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+	"github.com/VictoriaMetrics/metricsql"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/netstorage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/querystats"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/decimal"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
-	"github.com/VictoriaMetrics/metrics"
-	"github.com/VictoriaMetrics/metricsql"
 )
 
 var (
@@ -25,7 +26,7 @@ var (
 		`This option is DEPRECATED in favor of {__graphite__="a.*.c"} syntax for selecting metrics matching the given Graphite metrics filter`)
 )
 
-// Exec executes q for the given ec.
+// Exec executes q for the given ec.  // 执行查询语句
 func Exec(ec *EvalConfig, q string, isFirstPointOnly bool) ([]netstorage.Result, error) {
 	if querystats.Enabled() {
 		startTime := time.Now()
@@ -35,13 +36,13 @@ func Exec(ec *EvalConfig, q string, isFirstPointOnly bool) ([]netstorage.Result,
 
 	ec.validate()
 
-	e, err := parsePromQLWithCache(q)
+	e, err := parsePromQLWithCache(q) // 解析语句
 	if err != nil {
 		return nil, err
 	}
 
 	qid := activeQueriesV.Add(ec, q)
-	rv, err := evalExpr(ec, e)  // 执行表达式
+	rv, err := evalExpr(ec, e) // 执行表达式
 	activeQueriesV.Remove(qid)
 	if err != nil {
 		return nil, err
@@ -220,10 +221,10 @@ func getReverseCmpOp(op string) string {
 	}
 }
 
-func parsePromQLWithCache(q string) (metricsql.Expr, error) {  //解析查询表达式
-	pcv := parseCacheV.Get(q)  // 先从缓存中获取
+func parsePromQLWithCache(q string) (metricsql.Expr, error) { // 解析查询表达式
+	pcv := parseCacheV.Get(q) // 先从缓存中获取
 	if pcv == nil {
-		e, err := metricsql.Parse(q)  // 解析 metricsQL
+		e, err := metricsql.Parse(q) // 解析 metricsQL
 		if err == nil {
 			e = metricsql.Optimize(e)
 			e = adjustCmpOps(e)
@@ -301,7 +302,7 @@ type parseCacheValue struct {
 	err error
 }
 
-type parseCache struct {  // 这个结构，保存查询表达式解析后的缓存结果
+type parseCache struct { // 这个结构，保存查询表达式解析后的缓存结果
 	// Move atomic counters to the top of struct for 8-byte alignment on 32-bit arch.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
 
