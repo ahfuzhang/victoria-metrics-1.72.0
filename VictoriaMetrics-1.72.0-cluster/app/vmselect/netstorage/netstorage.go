@@ -650,7 +650,7 @@ func DeleteSeries(at *auth.Token, sq *storage.SearchQuery, deadline searchutils.
 		err          error
 	}
 	snr := startStorageNodesRequest(true, func(idx int, sn *storageNode) interface{} {
-		sn.deleteSeriesRequests.Inc()
+		sn.deleteSeriesRequests.Inc()  // 这个函数负责发出具体的查询请求
 		deletedCount, err := sn.deleteMetrics(requestData, deadline)
 		if err != nil {
 			sn.deleteSeriesErrors.Inc()
@@ -1468,12 +1468,12 @@ func ProcessSearchQuery(at *auth.Token, denyPartialResponse bool, sq *storage.Se
 	rss.packedTimeseries = pts
 	return &rss, isPartial, nil
 }
-
+  // 发送查询请求到 storage
 func processSearchQuery(at *auth.Token, denyPartialResponse bool, sq *storage.SearchQuery, fetchData bool,
 	processBlock func(mb *storage.MetricBlock) error, deadline searchutils.Deadline) (bool, error) {
 	requestData := sq.Marshal(nil)
 
-	// Send the query to all the storage nodes in parallel.
+	// Send the query to all the storage nodes in parallel.  // startStorageNodesRequest 函数启动N个协程
 	snr := startStorageNodesRequest(denyPartialResponse, func(idx int, sn *storageNode) interface{} {
 		sn.searchRequests.Inc()
 		err := sn.processSearchQuery(requestData, fetchData, processBlock, deadline)
@@ -1499,12 +1499,12 @@ type storageNodesRequest struct {
 	denyPartialResponse bool
 	resultsCh           chan interface{}
 }
-
+  // 有n个存储节点，就go n个协程
 func startStorageNodesRequest(denyPartialResponse bool, f func(idx int, sn *storageNode) interface{}) *storageNodesRequest {
 	resultsCh := make(chan interface{}, len(storageNodes))
 	for idx, sn := range storageNodes {
 		go func(idx int, sn *storageNode) {
-			result := f(idx, sn)
+			result := f(idx, sn)  // 函数 f 中是具体的查询发出逻辑
 			resultsCh <- result
 		}(idx, sn)
 	}
@@ -1658,10 +1658,10 @@ type storageNode struct {
 	searchErrors *metrics.Counter
 
 	// The number of metric blocks read.
-	metricBlocksRead *metrics.Counter
+	metricBlocksRead *metrics.Counter   // 查询响应的次数
 
 	// The number of read metric rows.
-	metricRowsRead *metrics.Counter
+	metricRowsRead *metrics.Counter  // 从 storage 读取的行的总数
 }
 
 func (sn *storageNode) registerMetricNames(mrs []storage.MetricRow, deadline searchutils.Deadline) error {
@@ -1850,7 +1850,7 @@ func (sn *storageNode) processSearchMetricNames(requestData []byte, deadline sea
 	}
 	return metricNames, nil
 }
-
+  // 发出查询请求
 func (sn *storageNode) processSearchQuery(requestData []byte, fetchData bool, processBlock func(mb *storage.MetricBlock) error, deadline searchutils.Deadline) error {
 	f := func(bc *handshake.BufferedConn) error {
 		if err := sn.processSearchQueryOnConn(bc, requestData, fetchData, processBlock); err != nil {
@@ -1860,7 +1860,7 @@ func (sn *storageNode) processSearchQuery(requestData []byte, fetchData bool, pr
 	}
 	return sn.execOnConnWithPossibleRetry("search_v4", f, deadline)
 }
-
+   // 执行 search_v4 查询协议
 func (sn *storageNode) execOnConnWithPossibleRetry(funcName string, f func(bc *handshake.BufferedConn) error, deadline searchutils.Deadline) error {
 	err := sn.execOnConn(funcName, f, deadline)
 	if err == nil {
@@ -1875,7 +1875,7 @@ func (sn *storageNode) execOnConnWithPossibleRetry(funcName string, f func(bc *h
 	// Repeat the query in the hope the error was temporary.
 	return sn.execOnConn(funcName, f, deadline)
 }
-
+   // 猜测是按照连接池的模式来执行查询
 func (sn *storageNode) execOnConn(rpcName string, f func(bc *handshake.BufferedConn) error, deadline searchutils.Deadline) error {
 	sn.concurrentQueries.Inc()
 	defer sn.concurrentQueries.Dec()
@@ -2430,7 +2430,7 @@ func (sn *storageNode) processSearchMetricNamesOnConn(bc *handshake.BufferedConn
 }
 
 const maxMetricNameSize = 64 * 1024
-
+  // 把各种查询参数序列化，写入TCP流
 func (sn *storageNode) processSearchQueryOnConn(bc *handshake.BufferedConn, requestData []byte, fetchData bool, processBlock func(mb *storage.MetricBlock) error) error {
 	// Send the request to sn.
 	if err := writeBytes(bc, requestData); err != nil {
@@ -2454,7 +2454,7 @@ func (sn *storageNode) processSearchQueryOnConn(bc *handshake.BufferedConn, requ
 
 	// Read response. It may consist of multiple MetricBlocks.
 	blocksRead := 0
-	var mb storage.MetricBlock
+	var mb storage.MetricBlock  // 每个查询结果都是一个 storage.MetricBlock 结构
 	for {
 		buf, err = readBytes(buf[:0], bc, maxMetricBlockSize)
 		if err != nil {
@@ -2565,9 +2565,9 @@ func readUint64(bc *handshake.BufferedConn) (uint64, error) {
 	return n, nil
 }
 
-var storageNodes []*storageNode
+var storageNodes []*storageNode  // 记录storage对象
 
-// InitStorageNodes initializes storage nodes' connections to the given addrs.
+// InitStorageNodes initializes storage nodes' connections to the given addrs.  // 连接到所有storage节点
 func InitStorageNodes(addrs []string) {
 	if len(addrs) == 0 {
 		logger.Panicf("BUG: addrs must be non-empty")

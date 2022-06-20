@@ -41,7 +41,7 @@ func Exec(ec *EvalConfig, q string, isFirstPointOnly bool) ([]netstorage.Result,
 	}
 
 	qid := activeQueriesV.Add(ec, q)
-	rv, err := evalExpr(ec, e)
+	rv, err := evalExpr(ec, e)  // 执行表达式
 	activeQueriesV.Remove(qid)
 	if err != nil {
 		return nil, err
@@ -220,10 +220,10 @@ func getReverseCmpOp(op string) string {
 	}
 }
 
-func parsePromQLWithCache(q string) (metricsql.Expr, error) {
-	pcv := parseCacheV.Get(q)
+func parsePromQLWithCache(q string) (metricsql.Expr, error) {  //解析查询表达式
+	pcv := parseCacheV.Get(q)  // 先从缓存中获取
 	if pcv == nil {
-		e, err := metricsql.Parse(q)
+		e, err := metricsql.Parse(q)  // 解析 metricsQL
 		if err == nil {
 			e = metricsql.Optimize(e)
 			e = adjustCmpOps(e)
@@ -301,7 +301,7 @@ type parseCacheValue struct {
 	err error
 }
 
-type parseCache struct {
+type parseCache struct {  // 这个结构，保存查询表达式解析后的缓存结果
 	// Move atomic counters to the top of struct for 8-byte alignment on 32-bit arch.
 	// See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/212
 

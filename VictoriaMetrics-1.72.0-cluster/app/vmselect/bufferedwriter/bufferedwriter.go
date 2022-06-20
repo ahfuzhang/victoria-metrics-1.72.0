@@ -10,7 +10,7 @@ import (
 // Get returns buffered writer for the given w.
 //
 // The writer must be returned to the pool after use by calling Put().
-func Get(w io.Writer) *Writer {
+func Get(w io.Writer) *Writer {  // 从对象池获取
 	v := writerPool.Get()
 	if v == nil {
 		v = &Writer{

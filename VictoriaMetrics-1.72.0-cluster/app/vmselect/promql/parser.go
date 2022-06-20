@@ -23,7 +23,7 @@ func IsRollup(s string) (childQuery string, window, step, offset *metricsql.Dura
 // IsMetricSelectorWithRollup verifies whether s contains PromQL metric selector
 // wrapped into rollup.
 //
-// It returns the wrapped query with the corresponding window with offset.
+// It returns the wrapped query with the corresponding window with offset.  // 判断查询表达式是否有聚合函数
 func IsMetricSelectorWithRollup(s string) (childQuery string, window, offset *metricsql.DurationExpr) {
 	expr, err := parsePromQLWithCache(s)
 	if err != nil {

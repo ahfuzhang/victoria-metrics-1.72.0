@@ -388,7 +388,7 @@ func exportHandler(at *auth.Token, w http.ResponseWriter, r *http.Request, match
 		}
 	}
 
-	tagFilterss, err := getTagFilterssFromMatches(matches)
+	tagFilterss, err := getTagFilterssFromMatches(matches)  //转换成过滤条件
 	if err != nil {
 		return err
 	}
@@ -1081,15 +1081,15 @@ func QueryHandler(startTime time.Time, at *auth.Token, w http.ResponseWriter, r 
 	defer queryDuration.UpdateDuration(startTime)
 
 	ct := startTime.UnixNano() / 1e6
-	query := r.FormValue("query")
+	query := r.FormValue("query")  // 查询表达式
 	if len(query) == 0 {
 		return fmt.Errorf("missing `query` arg")
 	}
-	start, err := searchutils.GetTime(r, "time", ct)
+	start, err := searchutils.GetTime(r, "time", ct)  // 想要查询的时间点
 	if err != nil {
 		return err
 	}
-	lookbackDelta, err := getMaxLookback(r)
+	lookbackDelta, err := getMaxLookback(r)  // 如果用户传入的时间点没有设置，最多允许往后追溯多长时间
 	if err != nil {
 		return err
 	}
@@ -1098,19 +1098,19 @@ func QueryHandler(startTime time.Time, at *auth.Token, w http.ResponseWriter, r 
 		return err
 	}
 	if step <= 0 {
-		step = defaultStep
+		step = defaultStep  // 默认的step是5分钟
 	}
-	deadline := searchutils.GetDeadlineForQuery(r, startTime)
+	deadline := searchutils.GetDeadlineForQuery(r, startTime)  // 计算超时的绝对时间
 
 	if len(query) > maxQueryLen.N {
 		return fmt.Errorf("too long query; got %d bytes; mustn't exceed `-search.maxQueryLen=%d` bytes", len(query), maxQueryLen.N)
 	}
-	etfs, err := searchutils.GetExtraTagFilters(r)
+	etfs, err := searchutils.GetExtraTagFilters(r)  // 获取用于join的查询表达式
 	if err != nil {
 		return err
 	}
 	if childQuery, windowExpr, offsetExpr := promql.IsMetricSelectorWithRollup(query); childQuery != "" {
-		window := windowExpr.Duration(step)
+		window := windowExpr.Duration(step)  // 如果是聚合计算的情况
 		offset := offsetExpr.Duration(step)
 		start -= offset
 		end := start
@@ -1358,12 +1358,12 @@ func adjustLastPoints(tss []netstorage.Result, start, end int64) []netstorage.Re
 	return tss
 }
 
-func getMaxLookback(r *http.Request) (int64, error) {
+func getMaxLookback(r *http.Request) (int64, error) {  // 一般都是 0
 	d := maxLookback.Milliseconds()
 	if d == 0 {
 		d = maxStalenessInterval.Milliseconds()
 	}
-	return searchutils.GetDuration(r, "max_lookback", d)
+	return searchutils.GetDuration(r, "max_lookback", d)  // 请求参数中可以传入 max_lookback 参数
 }
 
 func getTagFilterssFromMatches(matches []string) ([][]storage.TagFilter, error) {

@@ -207,7 +207,7 @@ func (d *Deadline) String() string {
 	return fmt.Sprintf("%.3f seconds (elapsed %.3f seconds); the timeout can be adjusted with `%s` command-line flag", d.timeout.Seconds(), elapsed.Seconds(), d.flagHint)
 }
 
-// GetExtraTagFilters returns additional label filters from request.
+// GetExtraTagFilters returns additional label filters from request.  // 看起来可以把两个查询的结果join在一起返回
 //
 // Label filters can be present in extra_label and extra_filters[] query args.
 // They are combined. For example, the following query args:

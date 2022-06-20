@@ -46,7 +46,7 @@ var (
 
 var slowQueries = metrics.NewCounter(`vm_slow_queries_total`)
 
-func getDefaultMaxConcurrentRequests() int {
+func getDefaultMaxConcurrentRequests() int {  // 获取默认的查询并发量
 	n := cgroup.AvailableCPUs()
 	if n <= 4 {
 		n *= 2
@@ -86,7 +86,7 @@ func main() {
 		netstorage.InitTmpBlocksDir("")
 		promql.InitRollupResultCache("")
 	}
-	concurrencyCh = make(chan struct{}, *maxConcurrentRequests)
+	concurrencyCh = make(chan struct{}, *maxConcurrentRequests)  //用于限制查询的并发量
 
 	go func() {
 		httpserver.Serve(*httpListenAddr, requestHandler)
@@ -115,7 +115,7 @@ func main() {
 	logger.Infof("the vmselect has been stopped")
 }
 
-var concurrencyCh chan struct{}
+var concurrencyCh chan struct{}  // 用于限制查询并发
 
 var (
 	concurrencyLimitReached = metrics.NewCounter(`vm_concurrent_select_limit_reached_total`)
@@ -148,18 +148,18 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 	case concurrencyCh <- struct{}{}:
 		defer func() { <-concurrencyCh }()
 	default:
-		// Sleep for a while until giving up. This should resolve short bursts in requests.
-		concurrencyLimitReached.Inc()
-		d := searchutils.GetMaxQueryDuration(r)
+		// Sleep for a while until giving up. This should resolve short bursts in requests.  //查询数量超限的情况
+		concurrencyLimitReached.Inc()  // 如果有这个监控项的数据，说明查询的并发度不够
+		d := searchutils.GetMaxQueryDuration(r)  // -search.maxQueryDuration=30s 默认查询超时时间为30s
 		if d > *maxQueueDuration {
 			d = *maxQueueDuration
 		}
 		t := timerpool.Get(d)
 		select {
-		case concurrencyCh <- struct{}{}:
+		case concurrencyCh <- struct{}{}:  // 再次尝试入队
 			timerpool.Put(t)
 			defer func() { <-concurrencyCh }()
-		case <-t.C:
+		case <-t.C:  //等了最多30秒
 			timerpool.Put(t)
 			concurrencyLimitTimeout.Inc()
 			err := &httpserver.ErrorWithStatusCode{
@@ -174,11 +174,11 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 
-	if *logSlowQueryDuration > 0 {
+	if *logSlowQueryDuration > 0 {  // 默认5秒
 		actualStartTime := time.Now()
 		defer func() {
 			d := time.Since(actualStartTime)
-			if d >= *logSlowQueryDuration {
+			if d >= *logSlowQueryDuration {  // 定义真实的慢查询的时间，避免算上等待时间
 				remoteAddr := httpserver.GetQuotedRemoteAddr(r)
 				requestURI := httpserver.GetRequestURI(r)
 				logger.Warnf("slow query according to -search.logSlowQueryDuration=%s: remoteAddr=%s, duration=%.3f seconds; requestURI: %q",
@@ -219,7 +219,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 	}
 	switch p.Prefix {
 	case "select":
-		return selectHandler(startTime, w, r, p, at)
+		return selectHandler(startTime, w, r, p, at)  //执行查询
 	case "delete":
 		return deleteHandler(startTime, w, r, p, at)
 	default:
@@ -232,7 +232,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) bool {
 var vmuiFiles embed.FS
 
 var vmuiFileServer = http.FileServer(http.FS(vmuiFiles))
-
+// 执行查询
 func selectHandler(startTime time.Time, w http.ResponseWriter, r *http.Request, p *httpserver.Path, at *auth.Token) bool {
 	defer func() {
 		// Count per-tenant cumulative durations and total requests

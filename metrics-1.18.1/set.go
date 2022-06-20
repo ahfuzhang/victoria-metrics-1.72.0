@@ -13,7 +13,7 @@ import (
 //
 // Metrics belonging to a set are exported separately from global metrics.
 //
-// Set.WritePrometheus must be called for exporting metrics from the set.
+// Set.WritePrometheus must be called for exporting metrics from the set.  //todo: 加一个限制个数的功能
 type Set struct {  //存储metric数据的结构
 	mu        sync.Mutex
 	a         []*namedMetric  // ??? 这个数组什么时候更新的
@@ -429,7 +429,7 @@ func (s *Set) registerMetric(name string, m metric) {  //注册一个新的可�
 	s.mu.Lock()
 	// defer will unlock in case of panic
 	// checks in test
-	defer s.mu.Unlock()
+	defer s.mu.Unlock()  //todo: 加一个最大值检测
 	s.mustRegisterLocked(name, m)  //加锁后进行注册
 }
 
