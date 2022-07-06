@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/logger"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/memory"
-	"github.com/VictoriaMetrics/metrics"
 )
 
 const dontNeedBlockSize = 16 * 1024 * 1024
@@ -31,10 +32,10 @@ func getBufferSize() int {
 	bufferSizeOnce.Do(func() {
 		n := memory.Allowed() / 1024 / 8
 		if n < 4*1024 {
-			n = 4 * 1024
+			n = 4 * 1024 // 最少缓存 4kb
 		}
 		if n > 512*1024 {
-			n = 512 * 1024
+			n = 512 * 1024 // 最多缓存512KB
 		}
 		bufferSize = n
 	})
@@ -113,7 +114,7 @@ var (
 	readCallsBuffered = metrics.NewCounter(`vm_filestream_buffered_read_calls_total`)
 	readCallsReal     = metrics.NewCounter(`vm_filestream_real_read_calls_total`)
 	readBytesBuffered = metrics.NewCounter(`vm_filestream_buffered_read_bytes_total`)
-	readBytesReal     = metrics.NewCounter(`vm_filestream_real_read_bytes_total`)
+	readBytesReal     = metrics.NewCounter(`vm_filestream_real_read_bytes_total`) // os.File对象的读统计
 	readersCount      = metrics.NewCounter(`vm_filestream_readers`)
 )
 
@@ -121,7 +122,7 @@ var (
 func (r *Reader) Read(p []byte) (int, error) {
 	startTime := time.Now()
 	defer func() {
-		d := time.Since(startTime).Seconds()
+		d := time.Since(startTime).Seconds() // 对整体延迟的秒数进行累加
 		readDuration.Add(d)
 	}()
 	readCallsBuffered.Inc()
@@ -137,7 +138,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 }
 
 type statReader struct {
-	*os.File
+	*os.File // buffer读和非buffer读，看起来就只是文件对象的不同
 }
 
 func (sr *statReader) Read(p []byte) (int, error) {
@@ -212,7 +213,7 @@ func newWriter(f *os.File, nocache bool) *Writer {
 	if nocache {
 		w.st.fd = f.Fd()
 	}
-	writersCount.Inc()
+	writersCount.Inc() // 创建了多少个写对象
 	return w
 }
 
@@ -243,7 +244,7 @@ var (
 	writeCallsBuffered   = metrics.NewCounter(`vm_filestream_buffered_write_calls_total`)
 	writeCallsReal       = metrics.NewCounter(`vm_filestream_real_write_calls_total`)
 	writtenBytesBuffered = metrics.NewCounter(`vm_filestream_buffered_written_bytes_total`)
-	writtenBytesReal     = metrics.NewCounter(`vm_filestream_real_written_bytes_total`)
+	writtenBytesReal     = metrics.NewCounter(`vm_filestream_real_written_bytes_total`) // File 对象的写统计
 	writersCount         = metrics.NewCounter(`vm_filestream_writers`)
 )
 
@@ -300,7 +301,7 @@ func getBufioWriter(f *os.File) *bufio.Writer {
 	sw := &statWriter{f}
 	v := bwPool.Get()
 	if v == nil {
-		return bufio.NewWriterSize(sw, getBufferSize())
+		return bufio.NewWriterSize(sw, getBufferSize()) // 最多缓存 512KB
 	}
 	bw := v.(*bufio.Writer)
 	bw.Reset(sw)
