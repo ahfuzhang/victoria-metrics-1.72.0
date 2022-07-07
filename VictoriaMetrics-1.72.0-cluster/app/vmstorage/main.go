@@ -243,7 +243,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request, strg *storage.Storag
 
 var activeForceMerges = metrics.NewCounter("vm_active_force_merges")
 
-func registerStorageMetrics(strg *storage.Storage) {
+func registerStorageMetrics(strg *storage.Storage) {  // 各种上报监控项
 	mCache := &storage.Metrics{}
 	var mCacheLock sync.Mutex
 	var lastUpdateTime time.Time

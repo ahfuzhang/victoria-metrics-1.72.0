@@ -51,7 +51,7 @@ type Storage struct {
 	searchTSIDsConcurrencyLimitReached uint64
 	searchTSIDsConcurrencyLimitTimeout uint64
 
-	slowRowInserts         uint64
+	slowRowInserts         uint64  // 记录慢写入的次数
 	slowPerDayIndexInserts uint64
 	slowMetricNameLoads    uint64
 
@@ -1928,7 +1928,7 @@ func (s *Storage) add(rows []rawRow, dstMrs []*MetricRow, mrs []MetricRow, preci
 		}
 		idb.putIndexSearch(is)  // 放回内存池
 		putPendingMetricRows(pmrs)
-		atomic.AddUint64(&s.slowRowInserts, slowInsertsCount)
+		atomic.AddUint64(&s.slowRowInserts, slowInsertsCount)  //记录慢写入的次数
 	}
 	if firstWarn != nil {
 		logger.WithThrottler("storageAddRows", 5*time.Second).Warnf("warn occurred during rows addition: %s", firstWarn)
@@ -2496,9 +2496,9 @@ type hourMetricIDs struct {
 	isFull   bool
 }
 
-func (s *Storage) getTSIDFromCache(dst *TSID, metricName []byte) bool {
+func (s *Storage) getTSIDFromCache(dst *TSID, metricName []byte) bool {  // 从这个cache获取metric -> tsid的数据 tsidCache
 	buf := (*[unsafe.Sizeof(*dst)]byte)(unsafe.Pointer(dst))[:]
-	buf = s.tsidCache.Get(buf[:0], metricName)
+	buf = s.tsidCache.Get(buf[:0], metricName)  //  ??? 为什么没有tsid缓存命中率的统计？
 	return uintptr(len(buf)) == unsafe.Sizeof(*dst)
 }
 

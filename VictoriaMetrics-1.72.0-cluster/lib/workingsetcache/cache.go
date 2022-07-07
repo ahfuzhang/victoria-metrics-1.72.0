@@ -247,7 +247,7 @@ func (c *Cache) UpdateStats(fcs *fastcache.Stats) {
 
 	fcs.GetCalls += atomic.LoadUint64(&c.cs.GetCalls)
 	fcs.SetCalls += atomic.LoadUint64(&c.cs.SetCalls)
-	fcs.Misses += atomic.LoadUint64(&c.cs.Misses)
+	fcs.Misses += atomic.LoadUint64(&c.cs.Misses)  // 通过这个来计算缓存命中率
 
 	prev := c.prev.Load().(*fastcache.Cache)
 	cs.Reset()

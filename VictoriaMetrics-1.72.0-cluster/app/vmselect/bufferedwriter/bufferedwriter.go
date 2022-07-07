@@ -42,7 +42,7 @@ var writerPool sync.Pool
 // The writer remembers the first occurred error, which can be inspected with Error method.
 type Writer struct {
 	lock sync.Mutex
-	bw   *bufio.Writer
+	bw   *bufio.Writer  // 为什么看不见gzip压缩的逻辑 ???
 	err  error
 }
 

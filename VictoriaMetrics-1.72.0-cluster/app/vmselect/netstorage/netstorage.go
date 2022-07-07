@@ -65,7 +65,7 @@ type Results struct {
 	fetchData bool
 	deadline  searchutils.Deadline
 
-	tbf *tmpBlocksFile
+	tbf *tmpBlocksFile  // ??? 是用临时文件来存储结果吗?
 
 	packedTimeseries []packedTimeseries
 }
@@ -134,7 +134,7 @@ func scheduleTimeseriesWork(workChs []chan *timeseriesWork, tsw *timeseriesWork)
 		default:
 			attempts++
 			if attempts >= len(workChs) {
-				workChs[idx] <- tsw
+				workChs[idx] <- tsw  // 几乎每个channel都试了一次，还是满。则不试了，阻塞等待
 				return
 			}
 		}
