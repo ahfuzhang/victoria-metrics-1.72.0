@@ -6,13 +6,14 @@ import (
 	"io"
 	"sync"
 
+	"github.com/VictoriaMetrics/metrics"
+	"github.com/golang/snappy"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/fasttime"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/flagutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/prompb"
-	"github.com/VictoriaMetrics/metrics"
-	"github.com/golang/snappy"
 )
 
 var maxInsertRequestSize = flagutil.NewBytes("maxInsertRequestSize", 32*1024*1024, "The maximum size in bytes of a single Prometheus remote_write API request")
@@ -20,7 +21,7 @@ var maxInsertRequestSize = flagutil.NewBytes("maxInsertRequestSize", 32*1024*102
 // ParseStream parses Prometheus remote_write message from reader and calls callback for the parsed timeseries.
 //
 // callback shouldn't hold tss after returning.
-func ParseStream(r io.Reader, callback func(tss []prompb.TimeSeries) error) error {
+func ParseStream(r io.Reader, callback func(tss []prompb.TimeSeries) error) error { // 协程函数中会阻塞执行这个函数
 	ctx := getPushCtx(r)
 	defer putPushCtx(ctx)
 	if err := ctx.Read(); err != nil {

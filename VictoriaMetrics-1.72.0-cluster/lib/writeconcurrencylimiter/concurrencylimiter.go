@@ -26,16 +26,16 @@ var ch chan struct{}
 //
 // Init must be called after flag.Parse call.
 func Init() {
-	ch = make(chan struct{}, *maxConcurrentInserts)
+	ch = make(chan struct{}, *maxConcurrentInserts) // 通过这个channel来限制insert的并发量
 }
 
 // Do calls f with the limited concurrency.
-func Do(f func() error) error {  // vm-insert 的 http 模块的并发限制
+func Do(f func() error) error { // vm-insert 的 http 模块的并发限制
 	// Limit the number of conurrent f calls in order to prevent from excess
 	// memory usage and CPU trashing.
 	select {
 	case ch <- struct{}{}:
-		err := f()
+		err := f() // 正常处理
 		<-ch
 		return err
 	default:
@@ -44,7 +44,7 @@ func Do(f func() error) error {  // vm-insert 的 http 模块的并发限制
 	// All the workers are busy.
 	// Sleep for up to *maxQueueDuration.
 	concurrencyLimitReached.Inc()
-	t := timerpool.Get(*maxQueueDuration)
+	t := timerpool.Get(*maxQueueDuration) // 最多等60s
 	select {
 	case ch <- struct{}{}:
 		timerpool.Put(t)

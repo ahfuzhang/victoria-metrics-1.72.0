@@ -11,6 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
+	xxhash "github.com/cespare/xxhash/v2"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/consts"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/encoding"
@@ -21,8 +24,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/netutil"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/timerpool"
-	"github.com/VictoriaMetrics/metrics"
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 var (
@@ -49,7 +50,7 @@ func (sn *storageNode) isNotReady() bool {
 // if sn is currently unavailable or overloaded.
 //
 // rows is the number of rows in the buf.
-func (sn *storageNode) push(buf []byte, rows int) error {
+func (sn *storageNode) push(buf []byte, rows int) error { // buffer写满后，进行push操作
 	if len(buf) > maxBufSizePerStorageNode {
 		logger.Panicf("BUG: len(buf)=%d cannot exceed %d", len(buf), maxBufSizePerStorageNode)
 	}
@@ -104,7 +105,7 @@ var closedCh = func() <-chan struct{} {
 	return ch
 }()
 
-func (sn *storageNode) run(stopCh <-chan struct{}, snIdx int) {  //在独立协程中执行
+func (sn *storageNode) run(stopCh <-chan struct{}, snIdx int) { // 在独立协程中执行
 	replicas := *replicationFactor
 	if replicas <= 0 {
 		replicas = 1
@@ -524,7 +525,7 @@ func Stop() {
 // ingestion rate capacity.
 //
 // It returns non-nil error only if Stop is called.
-func rerouteRowsMayBlock(snSource *storageNode, mayUseSNSource bool, buf []byte, rows int) error {
+func rerouteRowsMayBlock(snSource *storageNode, mayUseSNSource bool, buf []byte, rows int) error { // insert的阻塞写入的情况
 	if len(storageNodes) < 2 {
 		logger.Panicf("BUG: re-routing can work only if at least 2 storage nodes are configured; got %d nodes", len(storageNodes))
 	}

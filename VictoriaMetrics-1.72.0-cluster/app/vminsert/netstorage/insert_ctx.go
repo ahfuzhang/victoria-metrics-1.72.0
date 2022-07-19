@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	xxhash "github.com/cespare/xxhash/v2"
+	jump "github.com/lithammer/go-jump-consistent-hash"
+
 	"github.com/VictoriaMetrics/VictoriaMetrics/app/vminsert/relabel"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/auth"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/bytesutil"
@@ -11,8 +14,6 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/httpserver"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/prompb"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/storage"
-	xxhash "github.com/cespare/xxhash/v2"
-	jump "github.com/lithammer/go-jump-consistent-hash"
 )
 
 // InsertCtx is a generic context for inserting data.
@@ -38,7 +39,7 @@ func (br *bufRows) reset() {
 	br.rows = 0
 }
 
-func (br *bufRows) pushTo(sn *storageNode) error {
+func (br *bufRows) pushTo(sn *storageNode) error { // buffer写满后，进行push操作
 	bufLen := len(br.buf)
 	err := sn.push(br.buf, br.rows)
 	br.reset()
@@ -120,13 +121,14 @@ func (ctx *InsertCtx) WriteDataPoint(at *auth.Token, labels []prompb.Label, time
 }
 
 // WriteDataPointExt writes the given metricNameRaw with (timestmap, value) to ctx buffer with the given storageNodeIdx.
-func (ctx *InsertCtx) WriteDataPointExt(at *auth.Token, storageNodeIdx int, metricNameRaw []byte, timestamp int64, value float64) error {
+func (ctx *InsertCtx) WriteDataPointExt(at *auth.Token, storageNodeIdx int, metricNameRaw []byte, timestamp int64,
+	value float64) error {
 	br := &ctx.bufRowss[storageNodeIdx]
 	sn := storageNodes[storageNodeIdx]
-	bufNew := storage.MarshalMetricRow(br.buf, metricNameRaw, timestamp, value)
-	if len(bufNew) >= maxBufSizePerStorageNode {
+	bufNew := storage.MarshalMetricRow(br.buf, metricNameRaw, timestamp, value) // 追加到 storage对应的缓冲区
+	if len(bufNew) >= maxBufSizePerStorageNode {                                // maxBufSizePerStorageNode最大100MB
 		// Send buf to storageNode, since it is too big.
-		if err := br.pushTo(sn); err != nil {
+		if err := br.pushTo(sn); err != nil { // ??? 这里会阻塞吗
 			return err
 		}
 		br.buf = storage.MarshalMetricRow(bufNew[:0], metricNameRaw, timestamp, value)
