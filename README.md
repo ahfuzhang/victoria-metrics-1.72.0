@@ -1,18 +1,9 @@
 在victoria-metrics-1.72.0的群集版的基础上增加注释，是为了深入研究存储引擎的实现细节。
 注释不改变原有的行号。
 
-# 1.相关名词
-* xxhash
-* metricRow
-* tsid
-* 数据和索引
-* 索引：indexDB, table, part, block
-* 数据: table, big/small, partition, part, block
-
-# 2.需要了解的内容
-* 原始的time series数据是如何序列化的
-* vm-insert如何转发time series数据到vm-storage
-* time series的label name的排序
-* 目录结构
-* 文件结构
-* 对象的层级关系
+文章链接：
+* [VictoriaMetrics存储引擎分析.pdf](./VictoriaMetrics存储引擎分析.pdf)
+* [VictoriaMetrics中的golang代码优化方法](https://www.cnblogs.com/ahfuzhang/p/15918127.html)
+* [用golang开发系统软件的总结](https://www.cnblogs.com/ahfuzhang/p/16745742.html)
+* [VictoriaMetrics中协程优先级的处理方式](https://www.cnblogs.com/ahfuzhang/p/15847860.html)
+* 博客专栏，包含各种测试和性能数据：https://www.cnblogs.com/ahfuzhang/category/2076800.html
